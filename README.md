@@ -1,0 +1,96 @@
+# VaultStudy
+
+**VaultStudy** es una aplicación multiplataforma (*Windows* y *Android*) diseñada como una **bóveda de estudio jerárquica *offline-first*** para organizar asignaturas, PDFs, libros y apuntes en Markdown con bloques de código ejecutables y sincronización opcional en la nube.
+
+---
+
+## Descarga rápida de la APK (Android)
+
+> **Descarga directa desde el móvil (1 clic):**  
+> [**Descargar VaultStudy v1.0.0 (`app-release.apk`)**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/app-release.apk)
+
+Si estás leyendo esto desde el ordenador, escanea este código QR con la cámara de tu móvil para descargar el APK directamente:
+
+<p align="center">
+  <a href="https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/app-release.apk">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/app-release.apk" alt="QR descarga rápida APK VaultStudy" width="200" height="200" />
+  </a>
+</p>
+
+### Cómo instalarla en Android
+1. Pulsa en el enlace directo de arriba (o ve a [**Releases**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest) y descarga `app-release.apk`).
+2. Abre el archivo descargado desde tus notificaciones o tu gestor de archivos.
+3. Si Android lo solicita la primera vez, habilita **"Instalar aplicaciones desconocidas"** para tu navegador o gestor de archivos.
+
+---
+
+## Cómo funciona la aplicación
+
+### 1. Bóveda local jerárquica (*Offline-First*)
+* Todos tus apuntes, carpetas, libros y PDFs se guardan localmente en **SQLite** (con almacenamiento local de archivos), de modo que la aplicación funciona sin conexión a internet.
+* Estructura en árbol con **carpetas anidadas**, **elementos fijados** (*Fijados* / carrusel rápido en móvil), **archivos en raíz** y acciones rápidas para crear, renombrar, mover (`Mover a...`) o eliminar de forma recursiva.
+* Exportación e importación de copias portátiles en formato `.vaultpkg` (archivo comprimido con estructura y adjuntos).
+
+### 2. Carga masiva y organización rápida
+* **Importación múltiple de archivos** (`.pdf`, `.md` y archivos de código fuente) y **importación de carpetas completas** respetando su jerarquía original.
+* En **escritorio (Windows)** permite **arrastrar y soltar (*Drag & Drop*)** archivos directamente sobre la aplicación.
+* En **móvil (Android)** todas las acciones de creación e importación están accesibles desde el botón flotante `+` y los menús contextuales de cada carpeta o archivo.
+
+### 3. Editor Markdown, lector PDF y bloques de código
+* **Lector y editor Markdown:** vista dual/dividida en escritorio y pantalla de lectura/edición optimizada para móvil con resaltado de sintaxis para múltiples lenguajes.
+* **Lector PDF integrado (`pdfrx`):** apertura directa de PDFs y libros dentro de la app con extracción de texto para indexar el contenido en las búsquedas.
+* **Vista web y ejecución de código:**
+  * Los bloques **HTML** (`html`, `htm`) cuentan con **Vista Web** integrada y apertura en navegador local (`127.0.0.1`).
+  * En **escritorio**, `VaultCodeExecutionService` permite ejecutar fragmentos en **Java**, **PHP**, **Python**, **JavaScript** y **Dart** en un directorio temporal aislado (en Android/iOS el botón `Ejecutar` se oculta automáticamente y se mantiene la vista web/código).
+
+### 4. Búsqueda global
+* Buscador unificado para localizar al instante cualquier carpeta, apunte Markdown o PDF buscando tanto por título como por contenido y texto extraído de documentos.
+
+### 5. Sincronización en la nube y seguridad
+* **Almacenamiento seguro de sesión:** los tokens de sesión se guardan cifrados mediante `flutter_secure_storage` (DPAPI en Windows, Android Keystore en móvil, Keychain en Apple y `libsecret` en Linux), sin guardar credenciales en texto plano ni exponer secretos en logs.
+* **Autenticación con Supabase:** acceso mediante correo/contraseña o **GitHub OAuth con PKCE** (`RFC 7636`):
+  * En escritorio usa un servidor loopback temporal en `127.0.0.1`.
+  * En móvil usa *deep linking* (`vaultstudy://login-callback` con `app_links`).
+* **Aislamiento por usuario:** la sincronización de metadatos (Postgres) y archivos (Supabase Storage privado) se protege mediante políticas **RLS** por usuario autenticado.
+
+---
+
+## Arquitectura adaptativa
+
+VaultStudy cambia automáticamente su interfaz según el tamaño de pantalla (`lib/app.dart`):
+* **Escritorio (`DesktopShell`)**: barra lateral en árbol, pestañas múltiples, visor dividido y soporte *Drag & Drop*.
+* **Móvil (`MobileShell`)**: navegación inferior por pestañas, carrusel de fijados, carpetas desplegables, sección de archivos en raíz y lector dedicado (`MobileReaderScreen`).
+
+---
+
+## Compilar desde el código fuente
+
+### Requisitos
+* [Flutter SDK](https://docs.flutter.dev/get-started/install) (Dart SDK `^3.14.0`)
+* Para **Windows**: Visual Studio / Build Tools con carga de desarrollo C++ de escritorio.
+* Para **Android**: Android Studio + Android SDK + NDK.
+
+### Comandos básicos
+
+```bash
+# Instalar dependencias
+flutter pub get
+
+# Ejecutar pruebas automatizadas
+flutter test
+
+# Compilar para Windows
+flutter build windows --release
+
+# Compilar APK para Android
+flutter build apk --release
+```
+
+### Variables de entorno y OAuth móvil (opcional)
+Puedes usar tus propias credenciales públicas de Supabase copiando `.env.example` a `.env` y compilando con:
+
+```bash
+flutter build apk --release --dart-define-from-file=.env
+```
+
+Para habilitar **GitHub OAuth en Android**, añade la URL de retorno `vaultstudy://login-callback` en el panel de Supabase bajo **Authentication → URL Configuration → Redirect URLs**.

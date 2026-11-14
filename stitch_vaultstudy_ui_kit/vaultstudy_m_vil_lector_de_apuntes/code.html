@@ -1,0 +1,220 @@
+<!DOCTYPE html><html class="dark" lang="es"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#101419;color:#e0e2ea;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-container-highest": "#31353b", "inverse-primary": "#006c49", "on-background": "#e0e2ea", "secondary-fixed-dim": "#7bd0ff", "on-tertiary-container": "#1d17b2", "primary-fixed": "#6ffbbe", "primary": "#4edea3", "on-tertiary-fixed-variant": "#2f2ebe", "outline": "#86948a", "surface-tint": "#4edea3", "on-primary-fixed": "#002113", "on-secondary-fixed-variant": "#004c69", "on-primary-container": "#00422b", "on-secondary-container": "#00374d", "surface-container-lowest": "#0a0e14", "on-surface-variant": "#bbcabf", "error": "#ffb4ab", "tertiary-fixed-dim": "#c0c1ff", "surface": "#101419", "primary-fixed-dim": "#4edea3", "secondary-container": "#00a6e0", "on-primary": "#003824", "inverse-surface": "#e0e2ea", "surface-container-high": "#262a30", "background": "#101419", "tertiary-container": "#9699ff", "outline-variant": "#3c4a42", "surface-container-low": "#181c21", "on-error": "#690005", "on-primary-fixed-variant": "#005236", "tertiary": "#c0c1ff", "secondary-fixed": "#c4e7ff", "on-error-container": "#ffdad6", "surface-dim": "#101419", "secondary": "#7bd0ff", "on-secondary": "#00354a", "surface-variant": "#31353b", "on-tertiary": "#1000a9", "tertiary-fixed": "#e1e0ff", "inverse-on-surface": "#2d3136", "surface-container": "#1c2025", "on-secondary-fixed": "#001e2c", "surface-bright": "#36393f", "primary-container": "#10b981", "on-tertiary-fixed": "#07006c", "on-surface": "#e0e2ea", "error-container": "#93000a" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2rem", "gutter": "1rem", "margin": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem", "margin-desktop": "2rem", "gutter-desktop": "1.5rem", "margin-tablet": "1.5rem", "space-sm": "0.5rem", "space-md": "1rem" }, "fontFamily": { "code-inline": ["JetBrains Mono"], "body-lg": ["JetBrains Mono"], "headline-xl-mobile": ["Space Grotesk"], "headline-md": ["Space Grotesk"], "headline-xl": ["Space Grotesk"], "headline-lg-mobile": ["Space Grotesk"], "label-md": ["JetBrains Mono"], "body-md": ["JetBrains Mono"], "body-sm": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"], "headline-sm": ["Space Grotesk"], "headline-lg": ["Space Grotesk"] }, "fontSize": { "code-inline": ["0.8125rem", { "lineHeight": "1.25rem", "letterSpacing": "0em", "fontWeight": "500" }], "body-lg": ["1rem", { "lineHeight": "1.625rem", "letterSpacing": "-0.01em", "fontWeight": "400" }], "headline-xl-mobile": ["2rem", { "lineHeight": "2.5rem", "letterSpacing": "-0.02em", "fontWeight": "700" }], "headline-md": ["1.5rem", { "lineHeight": "2rem", "letterSpacing": "-0.01em", "fontWeight": "600" }], "headline-xl": ["3rem", { "lineHeight": "3.5rem", "letterSpacing": "-0.03em", "fontWeight": "700" }], "headline-lg-mobile": ["1.75rem", { "lineHeight": "2.25rem", "letterSpacing": "-0.02em", "fontWeight": "600" }], "label-md": ["0.75rem", { "lineHeight": "1rem", "letterSpacing": "0.05em", "fontWeight": "600" }], "body-md": ["0.875rem", { "lineHeight": "1.5rem", "letterSpacing": "0em", "fontWeight": "400" }], "body-sm": ["0.75rem", { "lineHeight": "1.25rem", "letterSpacing": "0.01em", "fontWeight": "400" }], "label-sm": ["0.6875rem", { "lineHeight": "0.875rem", "letterSpacing": "0.08em", "fontWeight": "600" }], "headline-sm": ["1.125rem", { "lineHeight": "1.5rem", "letterSpacing": "0em", "fontWeight": "500" }], "headline-lg": ["2.25rem", { "lineHeight": "2.75rem", "letterSpacing": "-0.02em", "fontWeight": "600" }] } } } }</script></head><body class="bg-surface font-body-md text-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0"><button aria-label="Volver" class="w-9 h-9 rounded-DEFAULT bg-surface-container flex items-center justify-center text-on-surface hover:text-primary transition-colors shrink-0" onclick="history.back()" type="button"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><div class="min-w-0 flex flex-col justify-center"><div class="flex items-center gap-space-xs text-primary font-label-sm text-label-sm uppercase tracking-wider leading-none mb-0.5"><span>Tema 1</span><span class="text-outline">/</span><span class="text-on-surface-variant truncate">Desarrollo Web</span></div><h1 class="font-headline-sm text-[16px] font-semibold text-on-surface truncate leading-tight">Apuntes SQL y Consultas</h1></div></div><div class="flex items-center gap-space-xs shrink-0"><button aria-label="Compartir apunte" class="w-9 h-9 rounded-DEFAULT bg-surface-container flex items-center justify-center text-on-surface hover:text-primary transition-colors" id="share-doc-btn" type="button"><span class="material-symbols-outlined text-[18px]">share</span></button><button aria-label="Más opciones" class="w-9 h-9 rounded-DEFAULT bg-surface-container flex items-center justify-center text-on-surface hover:text-primary transition-colors" type="button"><span class="material-symbols-outlined text-[18px]">more_vert</span></button></div></div></header><main class="flex flex-col relative w-full px-margin pt-16 bg-surface min-h-screen"><div class="flex flex-col w-full pb-28">
+<!-- Sub-header de Navegación y Contexto de Estudio -->
+
+<!-- Segmented Control / Chips de Navegación Rápida -->
+<div class="flex items-center gap-space-xs overflow-x-auto py-space-xs mb-space-md no-scrollbar">
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-DEFAULT bg-surface-container-low text-on-surface-variant hover:text-on-surface shrink-0 transition-colors" type="button">
+<span class="px-1 py-0.5 rounded-DEFAULT bg-error-container text-error font-label-sm text-[10px] uppercase font-bold leading-none">PDF</span>
+<span class="font-label-md text-label-md">Boletín 1.pdf</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-DEFAULT bg-primary text-surface-container-lowest font-semibold shrink-0 shadow-sm transition-colors" type="button"><span class="px-1 py-0.5 rounded-DEFAULT bg-surface-container-lowest text-primary font-code-inline text-[10px] uppercase font-bold leading-none">SRC</span><span class="font-label-md text-label-md text-surface-container-lowest font-semibold">Apuntes SQL</span><span class="w-1.5 h-1.5 rounded-full bg-surface-container-lowest ml-0.5"></span></button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-DEFAULT bg-surface-container-low text-on-surface-variant hover:text-on-surface shrink-0 transition-colors" type="button">
+<span class="px-1 py-0.5 rounded-DEFAULT bg-error-container text-error font-label-sm text-[10px] uppercase font-bold leading-none">PDF</span>
+<span class="font-label-md text-label-md">Libro.pdf</span>
+</button>
+</div>
+<!-- Contenedor Principal de Lectura y Apuntes -->
+<article class="flex flex-col gap-space-md">
+<!-- Meta de Lectura -->
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm px-space-xs">
+<span class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[14px] text-primary">schedule</span>
+        4 min lectura estimada
+      </span>
+<span class="flex items-center gap-space-xs text-secondary">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+        Sintaxis ANSI-92
+      </span>
+</div>
+<!-- Sección 1: INNER JOIN -->
+<section class="bg-surface-container-low p-space-md rounded-DEFAULT flex flex-col gap-space-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-0.5 bg-surface-container-highest text-primary font-code-inline text-label-sm rounded-DEFAULT">§ 01.4</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Consultas Relacionales: INNER JOIN</h3>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed font-inter">
+        La sentencia <code class="px-1.5 py-0.5 bg-surface-container-highest text-primary font-code-inline text-code-inline rounded-DEFAULT">INNER JOIN</code> selecciona registros que tienen valores coincidentes en ambas tablas. Es la base fundamental para resolver exámenes de modelado relacional y análisis de integridad referencial.
+      </p>
+<!-- Bloque de Código Interactivo con Sintaxis Limpia -->
+<div class="mt-space-xs rounded-DEFAULT bg-surface-container-lowest overflow-hidden shadow-md">
+<!-- Cabecera del Editor -->
+<div class="flex items-center justify-between px-space-md py-space-xs bg-surface-container">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-primary inline-block"></span>
+<span class="font-label-md text-label-md text-on-surface uppercase tracking-wider font-semibold">SQL QUERY</span>
+</div>
+<button class="flex items-center gap-1.5 px-space-sm py-1 rounded-DEFAULT bg-surface-container-highest text-on-surface hover:text-primary transition-all active:scale-95" id="copy-btn" type="button">
+<span class="material-symbols-outlined text-[15px]" id="copy-icon">content_copy</span>
+<span class="font-label-sm text-label-sm" id="copy-text">Copiar</span>
+</button>
+</div>
+<!-- Código con líneas numeradas -->
+<div class="p-space-md font-code-inline text-code-inline overflow-x-auto selection:bg-primary-container selection:text-on-primary">
+<table class="w-full border-collapse">
+<tbody>
+<tr class="leading-relaxed">
+<td class="select-none text-right pr-space-md text-outline-variant w-6 text-label-sm">1</td>
+<td class="whitespace-pre text-on-surface"><span class="text-secondary font-semibold">SELECT</span> e.nombre, c.curso</td>
+</tr>
+<tr class="leading-relaxed">
+<td class="select-none text-right pr-space-md text-outline-variant w-6 text-label-sm">2</td>
+<td class="whitespace-pre text-on-surface"><span class="text-secondary font-semibold">FROM</span> estudiantes e</td>
+</tr>
+<tr class="leading-relaxed bg-surface-container/40">
+<td class="select-none text-right pr-space-md text-primary w-6 text-label-sm">3</td>
+<td class="whitespace-pre text-on-surface"><span class="text-secondary font-semibold">INNER JOIN</span> inscripciones i</td>
+</tr>
+<tr class="leading-relaxed">
+<td class="select-none text-right pr-space-md text-outline-variant w-6 text-label-sm">4</td>
+<td class="whitespace-pre text-on-surface"> <span class="text-tertiary font-semibold">ON</span> e.id = i.estudiante_id</td>
+</tr>
+<tr class="leading-relaxed bg-surface-container/40">
+<td class="select-none text-right pr-space-md text-primary w-6 text-label-sm">5</td>
+<td class="whitespace-pre text-on-surface"><span class="text-secondary font-semibold">INNER JOIN</span> cursos c</td>
+</tr>
+<tr class="leading-relaxed">
+<td class="select-none text-right pr-space-md text-outline-variant w-6 text-label-sm">6</td>
+<td class="whitespace-pre text-on-surface"> <span class="text-tertiary font-semibold">ON</span> i.curso_id = c.id;</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Tarjeta Destacada para Examen (Callout de Alto Impacto) -->
+<div class="mt-space-xs p-space-md rounded-DEFAULT bg-surface-container relative overflow-hidden">
+<div class="absolute top-0 left-0 bottom-0 w-1.5 bg-primary"></div>
+<div class="flex items-start gap-space-sm pl-space-xs">
+<div class="w-8 h-8 rounded-DEFAULT bg-primary-container/20 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-primary text-[20px]" style="font-variation-settings: 'FILL' 1;">lightbulb</span>
+</div>
+<div class="flex flex-col gap-1 min-w-0">
+<span class="font-headline-sm text-headline-sm text-primary flex items-center gap-1.5">
+              Recordatorio para Examen
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface leading-normal font-inter">
+              Recuerda incluir siempre la condición <code class="px-1 py-0.5 bg-surface-container-highest text-primary font-code-inline rounded-DEFAULT">ON</code>. Si se omite, el motor generará un producto cartesiano (<code class="text-error font-code-inline">CROSS JOIN</code> implícito), lo cual penaliza severamente la calificación técnica.
+            </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Sección 2: HAVING vs WHERE -->
+<section class="bg-surface-container-low p-space-md rounded-DEFAULT flex flex-col gap-space-sm">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-0.5 bg-surface-container-highest text-secondary font-code-inline text-label-sm rounded-DEFAULT">§ 01.5</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Filtro de Agrupación (HAVING)</h3>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed font-inter">
+        La cláusula <code class="px-1.5 py-0.5 bg-surface-container-highest text-secondary font-code-inline text-code-inline rounded-DEFAULT">HAVING</code> filtra exclusivamente los grupos generados previamente por <code class="px-1.5 py-0.5 bg-surface-container-highest text-secondary font-code-inline text-code-inline rounded-DEFAULT">GROUP BY</code>, mientras que <code class="px-1.5 py-0.5 bg-surface-container-highest text-tertiary font-code-inline text-code-inline rounded-DEFAULT">WHERE</code> evalúa filas individuales antes de que se produzca cualquier agregación matemática.
+      </p>
+<!-- Tabla Comparativa Rápida Visual -->
+<div class="grid grid-cols-2 gap-space-xs mt-space-xs">
+<div class="p-space-sm bg-surface-container rounded-DEFAULT flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-tertiary font-semibold uppercase">WHERE</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-inter">Filtra tuplas individuales. No acepta funciones como <code class="text-on-surface font-code-inline">COUNT()</code>.</span>
+</div>
+<div class="p-space-sm bg-surface-container rounded-DEFAULT flex flex-col gap-1">
+<span class="font-label-sm text-label-sm text-secondary font-semibold uppercase">HAVING</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-inter">Filtra métricas agregadas post-agrupamiento (<code class="text-on-surface font-code-inline">SUM &gt; 100</code>).</span>
+</div>
+</div>
+</section>
+<!-- Estado de Progreso de Lectura -->
+<div class="p-space-sm bg-surface-container rounded-DEFAULT flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Progreso del módulo: 80% completado</span>
+</div>
+<button class="font-label-sm text-label-sm text-primary font-semibold hover:underline" type="button">
+        Siguiente tema →
+      </button>
+</div>
+</article>
+<!-- Barra Flotante Inferior de Estudio (Cápsula con backdrop blur) -->
+<aside class="fixed bottom-4 left-4 right-4 z-40 max-w-md mx-auto">
+<div class="bg-surface-container-highest/90 backdrop-blur-md rounded-DEFAULT p-1.5 shadow-2xl flex items-center justify-around">
+<!-- Acción 1: Buscar -->
+<button class="flex flex-col items-center justify-center py-1.5 px-3 rounded-DEFAULT hover:bg-surface-container text-on-surface hover:text-primary transition-all active:scale-95 group" id="tool-search" type="button">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform">search</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant group-hover:text-on-surface mt-0.5">Buscar</span>
+</button>
+<div class="w-px h-6 bg-outline-variant/40"></div>
+<!-- Acción 2: Subrayar -->
+<button class="flex flex-col items-center justify-center py-1.5 px-3 rounded-DEFAULT hover:bg-surface-container text-on-surface hover:text-secondary transition-all active:scale-95 group" id="tool-highlight" type="button">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform text-secondary">ink_highlighter</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant group-hover:text-on-surface mt-0.5">Subrayar</span>
+</button>
+<div class="w-px h-6 bg-outline-variant/40"></div>
+<!-- Acción 3: Añadir Nota Rápida -->
+<button class="flex flex-col items-center justify-center py-1.5 px-3 rounded-DEFAULT hover:bg-surface-container text-on-surface hover:text-primary transition-all active:scale-95 group" id="tool-note" type="button">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-110 transition-transform text-primary">edit_note</span>
+<span class="font-label-sm text-[10px] text-on-surface-variant group-hover:text-on-surface mt-0.5">Nota rápida</span>
+</button>
+</div>
+</aside>
+<!-- Toast de Confirmación para Acciones -->
+<div class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-primary-container text-on-primary-container px-space-md py-space-xs rounded-DEFAULT font-label-sm text-label-sm shadow-xl flex items-center gap-space-xs transition-opacity duration-300 opacity-0 pointer-events-none" id="status-toast">
+<span class="material-symbols-outlined text-[16px]">check_circle</span>
+<span id="toast-message">Acción completada</span>
+</div>
+</div>
+<script>
+  (function() {
+    const copyBtn = document.getElementById('copy-btn');
+    const copyIcon = document.getElementById('copy-icon');
+    const copyText = document.getElementById('copy-text');
+    const toast = document.getElementById('status-toast');
+    const toastMsg = document.getElementById('toast-message');
+
+    function showToast(message) {
+      if (!toast || !toastMsg) return;
+      toastMsg.textContent = message;
+      toast.classList.remove('opacity-0', 'pointer-events-none');
+      toast.classList.add('opacity-100');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        toast.classList.add('opacity-0', 'pointer-events-none');
+      }, 2200);
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const codeText = `SELECT e.nombre, c.curso\nFROM estudiantes e\nINNER JOIN inscripciones i\n  ON e.id = i.estudiante_id\nINNER JOIN cursos c\n  ON i.curso_id = c.id;`;
+        navigator.clipboard?.writeText(codeText).then(() => {
+          if (copyIcon && copyText) {
+            copyIcon.textContent = 'done';
+            copyText.textContent = 'Copiado';
+            setTimeout(() => {
+              copyIcon.textContent = 'content_copy';
+              copyText.textContent = 'Copiar';
+            }, 2000);
+          }
+          showToast('Código SQL copiado al portapapeles');
+        }).catch(() => {
+          showToast('Código listo para consulta');
+        });
+      });
+    }
+
+    const toolSearch = document.getElementById('tool-search');
+    const toolHighlight = document.getElementById('tool-highlight');
+    const toolNote = document.getElementById('tool-note');
+    const shareBtn = document.getElementById('share-doc-btn');
+
+    if (toolSearch) {
+      toolSearch.addEventListener('click', () => showToast('Buscador activado: escribe términos clave'));
+    }
+    if (toolHighlight) {
+      toolHighlight.addEventListener('click', () => showToast('Modo resaltador activo'));
+    }
+    if (toolNote) {
+      toolNote.addEventListener('click', () => showToast('Borrador de nota creado para este bloque'));
+    }
+    if (shareBtn) {
+      shareBtn.addEventListener('click', () => showToast('Enlace de apunte generado para el grupo'));
+    }
+  })();
+</script></main>
+
+</body></html>

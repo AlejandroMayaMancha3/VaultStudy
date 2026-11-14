@@ -1,0 +1,230 @@
+<!DOCTYPE html><html class="dark" lang="es"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_tab" name="shell-type"><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#101419;color:#e0e2ea;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { "colors": { "surface-container-highest": "#31353b", "inverse-primary": "#006c49", "on-background": "#e0e2ea", "secondary-fixed-dim": "#7bd0ff", "on-tertiary-container": "#1d17b2", "primary-fixed": "#6ffbbe", "primary": "#4edea3", "on-tertiary-fixed-variant": "#2f2ebe", "outline": "#86948a", "surface-tint": "#4edea3", "on-primary-fixed": "#002113", "on-secondary-fixed-variant": "#004c69", "on-primary-container": "#00422b", "on-secondary-container": "#00374d", "surface-container-lowest": "#0a0e14", "on-surface-variant": "#bbcabf", "error": "#ffb4ab", "tertiary-fixed-dim": "#c0c1ff", "surface": "#101419", "primary-fixed-dim": "#4edea3", "secondary-container": "#00a6e0", "on-primary": "#003824", "inverse-surface": "#e0e2ea", "surface-container-high": "#262a30", "background": "#101419", "tertiary-container": "#9699ff", "outline-variant": "#3c4a42", "surface-container-low": "#181c21", "on-error": "#690005", "on-primary-fixed-variant": "#005236", "tertiary": "#c0c1ff", "secondary-fixed": "#c4e7ff", "on-error-container": "#ffdad6", "surface-dim": "#101419", "secondary": "#7bd0ff", "on-secondary": "#00354a", "surface-variant": "#31353b", "on-tertiary": "#1000a9", "tertiary-fixed": "#e1e0ff", "inverse-on-surface": "#2d3136", "surface-container": "#1c2025", "on-secondary-fixed": "#001e2c", "surface-bright": "#36393f", "primary-container": "#10b981", "on-tertiary-fixed": "#07006c", "on-surface": "#e0e2ea", "error-container": "#93000a" }, "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "spacing": { "space-xl": "2rem", "gutter": "1rem", "margin": "1rem", "space-xs": "0.25rem", "space-lg": "1.5rem", "margin-desktop": "2rem", "gutter-desktop": "1.5rem", "margin-tablet": "1.5rem", "space-sm": "0.5rem", "space-md": "1rem" }, "fontFamily": { "code-inline": ["JetBrains Mono"], "body-lg": ["JetBrains Mono"], "headline-xl-mobile": ["Space Grotesk"], "headline-md": ["Space Grotesk"], "headline-xl": ["Space Grotesk"], "headline-lg-mobile": ["Space Grotesk"], "label-md": ["JetBrains Mono"], "body-md": ["JetBrains Mono"], "body-sm": ["JetBrains Mono"], "label-sm": ["JetBrains Mono"], "headline-sm": ["Space Grotesk"], "headline-lg": ["Space Grotesk"] }, "fontSize": { "code-inline": ["0.8125rem", { "lineHeight": "1.25rem", "letterSpacing": "0em", "fontWeight": "500" }], "body-lg": ["1rem", { "lineHeight": "1.625rem", "letterSpacing": "-0.01em", "fontWeight": "400" }], "headline-xl-mobile": ["2rem", { "lineHeight": "2.5rem", "letterSpacing": "-0.02em", "fontWeight": "700" }], "headline-md": ["1.5rem", { "lineHeight": "2rem", "letterSpacing": "-0.01em", "fontWeight": "600" }], "headline-xl": ["3rem", { "lineHeight": "3.5rem", "letterSpacing": "-0.03em", "fontWeight": "700" }], "headline-lg-mobile": ["1.75rem", { "lineHeight": "2.25rem", "letterSpacing": "-0.02em", "fontWeight": "600" }], "label-md": ["0.75rem", { "lineHeight": "1rem", "letterSpacing": "0.05em", "fontWeight": "600" }], "body-md": ["0.875rem", { "lineHeight": "1.5rem", "letterSpacing": "0em", "fontWeight": "400" }], "body-sm": ["0.75rem", { "lineHeight": "1.25rem", "letterSpacing": "0.01em", "fontWeight": "400" }], "label-sm": ["0.6875rem", { "lineHeight": "0.875rem", "letterSpacing": "0.08em", "fontWeight": "600" }], "headline-sm": ["1.125rem", { "lineHeight": "1.5rem", "letterSpacing": "0em", "fontWeight": "500" }], "headline-lg": ["2.25rem", { "lineHeight": "2.75rem", "letterSpacing": "-0.02em", "fontWeight": "600" }] } } } }</script></head><body class="bg-surface font-body-md text-body-md text-on-surface flex flex-col min-h-screen"><header class="fixed top-0 w-full z-50 pt-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 px-margin flex items-center justify-between gap-space-sm"><div class="flex items-center gap-space-sm min-w-0"><div class="w-8 h-8 rounded-DEFAULT bg-primary-container/20 flex items-center justify-center text-primary-container shrink-0"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"></rect><circle cx="12" cy="12" r="2"></circle><path d="m13.5 13.5 2.5 2.5"></path><path d="M8 7h.01"></path><path d="M16 7h.01"></path></svg></div><span class="font-headline-sm text-headline-sm text-on-surface truncate">VaultStudy</span></div><div class="flex items-center gap-space-sm shrink-0"><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container rounded-DEFAULT"><span class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span><span class="material-symbols-outlined text-primary-container text-[16px]">cloud_done</span><span class="font-label-sm text-label-sm text-primary-container tracking-wider font-code-inline">SYNC OFFLINE</span></div><div class="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant flex items-center justify-center overflow-hidden shrink-0 text-on-surface"><svg class="w-5 h-5 text-on-surface-variant" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"></path></svg></div></div></div></header><main class="flex flex-col relative w-full px-margin pt-16 pb-20 bg-surface min-h-screen"><div class="flex flex-col w-full pb-24">
+<!-- Cabecera de vista con saludo y estado táctil -->
+<section class="flex flex-col gap-space-sm pt-space-xs mb-space-md"><div class="flex flex-col min-w-0 pt-space-xs"><div class="flex items-center justify-between"><h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface tracking-tight">Mis Apuntes</h1><span class="font-code-inline text-code-inline text-on-surface-variant/80 px-space-xs py-[2px] bg-surface-container-low rounded-DEFAULT border border-outline-variant/30">#SYS-904</span></div><p class="text-body-sm text-on-surface-variant" style="font-family: 'Inter', sans-serif;">Baúl de Estudio 2024-2025</p></div><div class="flex items-center gap-space-xs bg-surface-container px-space-md py-space-sm rounded-DEFAULT mt-space-xs border border-outline-variant/40"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">search</span><input class="w-full bg-transparent text-on-surface placeholder:text-on-surface-variant text-body-md focus:outline-none" placeholder="Buscar asignaturas, temas o PDFs..." style="font-family: 'Inter', sans-serif;" type="text"><button aria-label="Filtrar recursos" class="flex items-center justify-center p-space-xs bg-surface-container-high hover:bg-surface-container-highest rounded-DEFAULT text-secondary transition-colors" type="button"><span class="material-symbols-outlined text-[18px]">tune</span></button></div></section>
+<!-- Sección Fijados para examen: Scroll horizontal -->
+<section class="flex flex-col mb-space-lg">
+<div class="flex items-center justify-between mb-space-sm">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]" style="font-variation-settings: 'FILL' 1;">push_pin</span>
+<h2 class="font-headline-sm text-headline-sm text-on-surface uppercase tracking-wide">Fijados para examen</h2>
+</div>
+<span class="font-label-sm text-label-sm text-secondary uppercase font-code-inline">3 ACTIVOS</span>
+</div>
+<div class="flex overflow-x-auto gap-space-md no-scrollbar -mx-margin px-margin snap-x snap-mandatory">
+<!-- Tarjeta 1: Boletín 1.pdf -->
+<article class="min-w-[240px] max-w-[260px] snap-start flex flex-col justify-between bg-surface-container p-space-md rounded-DEFAULT shadow-md hover:bg-surface-container-high transition-colors">
+<div>
+<div class="flex items-start justify-between mb-space-sm">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-error">
+<span class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+</div>
+<span class="font-label-sm text-label-sm text-error bg-surface-container-lowest px-space-xs py-[2px] rounded-DEFAULT">Examen Mañana</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Boletín 1.pdf</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Desarrollo Web</p>
+</div>
+<div class="flex items-center justify-between mt-space-md pt-space-xs border-t-0 bg-surface-container-low px-space-sm py-space-xs rounded-DEFAULT">
+<span class="font-label-md text-label-md text-primary">Pág 3/12</span>
+<span class="material-symbols-outlined text-primary text-[16px]">bookmark</span>
+</div>
+</article>
+<!-- Tarjeta 2: Apuntes SQL -->
+<article class="min-w-[240px] max-w-[260px] snap-start flex flex-col justify-between bg-surface-container p-space-md rounded-DEFAULT shadow-md hover:bg-surface-container-high transition-colors">
+<div>
+<div class="flex items-start justify-between mb-space-sm">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-secondary">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary bg-surface-container-lowest px-space-xs py-[2px] rounded-DEFAULT">Snippets clave</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Apuntes SQL</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Desarrollo Web</p>
+</div>
+<div class="flex items-center justify-between mt-space-md pt-space-xs bg-surface-container-low px-space-sm py-space-xs rounded-DEFAULT">
+<span class="font-label-md text-label-md text-secondary">6 notas</span>
+<span class="material-symbols-outlined text-secondary text-[16px]">code</span>
+</div>
+</article>
+<!-- Tarjeta 3: Formulario UX -->
+<article class="min-w-[240px] max-w-[260px] snap-start flex flex-col justify-between bg-surface-container p-space-md rounded-DEFAULT shadow-md hover:bg-surface-container-high transition-colors">
+<div>
+<div class="flex items-start justify-between mb-space-sm">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-error">
+<span class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant bg-surface-container-lowest px-space-xs py-[2px] rounded-DEFAULT">Referencia rápida</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface truncate">Formulario UX</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Interfaces Web</p>
+</div>
+<div class="flex items-center justify-between mt-space-md pt-space-xs bg-surface-container-low px-space-sm py-space-xs rounded-DEFAULT">
+<span class="font-label-md text-label-md text-on-surface-variant">Pág 1/4</span>
+<span class="material-symbols-outlined text-primary text-[16px]">download_done</span>
+</div>
+</article>
+</div>
+</section>
+<!-- Sección principal Asignaturas con acordeones estructurados -->
+<section class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between mb-space-xs">
+<h2 class="font-headline-sm text-headline-sm text-on-surface tracking-wide uppercase">Asignaturas de Bóveda</h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant">2 MATERIAS ACTIVAS</span>
+</div>
+<!-- Acordeón 1: Desarrollo Web (ESTADO: ABIERTO) -->
+<div class="flex flex-col bg-surface-container-low rounded-DEFAULT overflow-hidden shadow-sm">
+<!-- Encabezado de la Asignatura -->
+<button class="w-full flex items-center justify-between p-space-md bg-surface-container text-left hover:bg-surface-container-high transition-colors" onclick="const p = this.nextElementSibling; p.classList.toggle('hidden'); const i = this.querySelector('.arrow-icon'); i.classList.toggle('rotate-180');" type="button">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-9 h-9 rounded-DEFAULT bg-surface-container-highest text-primary shrink-0">
+<span class="material-symbols-outlined text-[22px]">developer_mode_tv</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-headline-sm text-on-surface truncate">Desarrollo Web</span>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm text-primary uppercase font-code-inline">2 Temas</span>
+<span class="text-on-surface-variant text-[10px]">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-code-inline">5 Archivos</span>
+</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] transition-transform duration-200 arrow-icon rotate-180">expand_more</span>
+</button>
+<!-- Contenedor Interno de Temas y Archivos -->
+<div class="flex flex-col p-space-sm gap-space-sm bg-surface-container-low">
+<!-- Subnivel 1: Tema 1: Arquitectura y BD (Abierto) -->
+<div class="flex flex-col bg-surface-container rounded-DEFAULT overflow-hidden">
+<div class="flex items-center justify-between px-space-md py-space-sm bg-surface-container-high">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="w-1.5 h-3 bg-primary rounded-full"></span>
+<h4 class="font-headline-sm text-headline-sm text-on-surface truncate text-sm">Tema 1: Arquitectura y BD</h4>
+</div>
+<span class="font-label-sm text-label-sm text-primary uppercase font-code-inline">[4 RECURSOS]</span>
+</div>
+<!-- Lista de Archivos Táctiles del Tema 1 -->
+<div class="flex flex-col divide-y divide-transparent">
+<!-- Archivo 1: Boletín 1.pdf -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-high/60 transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-error shrink-0">
+<span class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">Boletín 1.pdf</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">1.2 MB • PDF con subrayados</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs shrink-0 ml-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]" title="Disponible Offline">check_circle</span>
+<button aria-label="Opciones de archivo" class="p-space-xs text-on-surface-variant hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Archivo 2: Boletín 2.pdf -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-high/60 transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-error shrink-0">
+<span class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">Boletín 2.pdf</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">840 KB • Ejercicios resueltos</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs shrink-0 ml-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]" title="Disponible Offline">check_circle</span>
+<button aria-label="Opciones de archivo" class="p-space-xs text-on-surface-variant hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Archivo 3: Libro de texto.pdf -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-high/60 transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-error shrink-0">
+<span class="material-symbols-outlined text-[20px]">picture_as_pdf</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">Libro de texto.pdf</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">14.5 MB • Capítulo 3</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs shrink-0 ml-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]" title="Disponible Offline">check_circle</span>
+<button aria-label="Opciones de archivo" class="p-space-xs text-on-surface-variant hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Archivo 4: Apuntes SQL y Consultas -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-high/60 transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-8 h-8 rounded-DEFAULT bg-surface-container-lowest text-secondary shrink-0">
+<span class="material-symbols-outlined text-[20px]">data_object</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-semibold truncate">Apuntes SQL y Consultas</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Última edición hace 2h • 4 fragmentos de código</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs shrink-0 ml-space-sm">
+<span class="material-symbols-outlined text-primary text-[18px]" title="Disponible Offline">check_circle</span>
+<button aria-label="Opciones de archivo" class="p-space-xs text-on-surface-variant hover:text-on-surface" type="button">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Subnivel 2: Tema 2: Backend Node & APIs (Plegado) -->
+<button class="flex items-center justify-between px-space-md py-space-sm bg-surface-container rounded-DEFAULT text-left hover:bg-surface-container-high transition-colors" type="button">
+<div class="flex items-center gap-space-xs min-w-0">
+<span class="w-1.5 h-3 bg-outline-variant rounded-full"></span>
+<span class="font-body-md text-body-md text-on-surface truncate">Tema 2: Backend Node &amp; APIs</span>
+</div>
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="font-label-sm text-label-sm text-on-surface-variant font-code-inline">3 ARCHIVOS</span>
+<span class="material-symbols-outlined text-on-surface-variant text-[18px]">chevron_right</span>
+</div>
+</button>
+</div>
+</div>
+<!-- Acordeón 2: Interfaces Web (ESTADO: PLEGADO) -->
+<div class="flex flex-col bg-surface-container-low rounded-DEFAULT overflow-hidden shadow-sm">
+<button class="w-full flex items-center justify-between p-space-md bg-surface-container text-left hover:bg-surface-container-high transition-colors" onclick="const p = this.nextElementSibling; p.classList.toggle('hidden'); const i = this.querySelector('.arrow-icon'); i.classList.toggle('rotate-180');" type="button">
+<div class="flex items-center gap-space-sm min-w-0">
+<div class="flex items-center justify-center w-9 h-9 rounded-DEFAULT bg-tertiary-container/30 text-tertiary shrink-0">
+<span class="material-symbols-outlined text-[22px]">folder</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-headline-sm text-on-surface truncate">Interfaces Web</span>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-sm text-label-sm text-tertiary uppercase font-code-inline">3 Temas</span>
+<span class="text-on-surface-variant text-[10px]">•</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant font-code-inline">8 Archivos</span>
+</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant text-[20px] transition-transform duration-200 arrow-icon">expand_more</span>
+</button>
+<!-- Contenedor Plegado (Oculto por defecto) -->
+<div class="hidden flex-col p-space-sm gap-space-xs bg-surface-container-low">
+<div class="p-space-sm text-center">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Archivos de Diseño Figma, Heurísticas y CSS Grid sincronizados.</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Botón de Acción Flotante (FAB) en esquina inferior derecha con degradado indigo-cyan -->
+<div class="fixed right-margin bottom-20 z-40">
+<button aria-label="Subir PDF o Nueva Nota" class="flex items-center justify-center w-14 h-14 rounded-full bg-primary-container text-surface-container-lowest shadow-xl active:scale-95 transition-transform hover:opacity-90" onclick="const toast = document.getElementById('fab-toast'); toast.classList.remove('opacity-0', 'pointer-events-none'); setTimeout(() =&gt; toast.classList.add('opacity-0', 'pointer-events-none'), 2200);" style="background-color: rgb(16, 185, 129);" type="button"><span class="material-symbols-outlined text-[28px] font-bold text-surface-container-lowest">add</span></button>
+</div>
+<!-- Micro-interacción Toast de confirmación de subida -->
+<div class="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-opacity duration-300 bg-surface-container-highest px-space-md py-space-xs rounded-DEFAULT shadow-xl flex items-center gap-space-xs" id="fab-toast">
+<span class="material-symbols-outlined text-primary text-[18px]">upload_file</span>
+<span class="font-label-md text-label-md text-on-surface">Subir PDF o Nueva Nota listo</span>
+</div>
+</div></main><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/80 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]" data-active-classes="text-primary bg-surface-container-high"><div class="h-16 px-margin flex items-stretch justify-around"><a aria-current="page" class="flex-1 flex flex-col items-center justify-center gap-space-xs transition-colors min-h-[44px] min-w-[44px] text-primary bg-surface-container-high" data-path="carpetas" href="#"><span class="material-symbols-outlined text-[20px]">folder</span><span class="font-label-md text-label-md">Carpetas</span></a><a class="flex-1 flex flex-col items-center justify-center gap-space-xs text-on-surface-variant hover:text-on-surface transition-colors min-h-[44px] min-w-[44px]" data-path="recientes" href="#"><span class="material-symbols-outlined text-[20px]">history</span><span class="font-label-md text-label-md">Recientes</span></a><a class="flex-1 flex flex-col items-center justify-center gap-space-xs text-on-surface-variant hover:text-on-surface transition-colors min-h-[44px] min-w-[44px]" data-path="ajustes" href="#"><span class="material-symbols-outlined text-[20px]">settings</span><span class="font-label-md text-label-md">Ajustes</span></a></div></nav>
+
+</body></html>
