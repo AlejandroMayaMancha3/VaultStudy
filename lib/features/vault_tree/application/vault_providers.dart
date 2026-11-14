@@ -24,7 +24,9 @@ class VaultItemsNotifier extends AsyncNotifier<List<VaultItem>> {
   Future<List<VaultItem>> build() async {
     final db = await DatabaseHelper.instance.database;
     await VaultSeeder.seedIfEmpty(db);
-    return ref.read(vaultRepositoryProvider).getAllItems();
+    return ref
+        .read(vaultRepositoryProvider)
+        .getAllItems(includeExtractedText: false);
   }
 
   Future<void> refresh() async {
@@ -32,7 +34,9 @@ class VaultItemsNotifier extends AsyncNotifier<List<VaultItem>> {
     state = await AsyncValue.guard(() async {
       final db = await DatabaseHelper.instance.database;
       await VaultSeeder.seedIfEmpty(db);
-      return ref.read(vaultRepositoryProvider).getAllItems();
+      return ref
+          .read(vaultRepositoryProvider)
+          .getAllItems(includeExtractedText: false);
     });
   }
 

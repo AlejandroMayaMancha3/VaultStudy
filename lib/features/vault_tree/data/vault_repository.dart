@@ -40,10 +40,24 @@ class VaultRepository {
 
   Future<Database> get _db => _databaseProvider();
 
-  Future<List<VaultItem>> getAllItems() async {
+  Future<List<VaultItem>> getAllItems({bool includeExtractedText = true}) async {
     final db = await _db;
     final rows = await db.query(
       'items',
+      columns: includeExtractedText
+          ? null
+          : const [
+              'id',
+              'parent_id',
+              'title',
+              'type',
+              'file_path',
+              'file_size',
+              'content_md',
+              'is_pinned',
+              'sort_order',
+              'updated_at',
+            ],
       orderBy: 'sort_order ASC, title COLLATE NOCASE ASC',
     );
     return rows.map(VaultItem.fromMap).toList();

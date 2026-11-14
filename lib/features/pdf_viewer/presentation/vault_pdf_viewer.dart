@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_breakpoints.dart';
 import '../../../core/database/database_helper.dart';
+import '../../../core/pdf/pdf_runtime_initializer.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../cloud_sync/application/cloud_sync_service.dart';
@@ -155,7 +156,11 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
       return;
     }
     try {
-      final path = await DatabaseHelper.instance.resolveVaultFilePath(stored);
+      final results = await Future.wait<Object?>([
+        DatabaseHelper.instance.resolveVaultFilePath(stored),
+        PdfRuntimeInitializer.ensureInitialized(),
+      ]);
+      final path = results[0]! as String;
       if (!mounted) return;
       setState(() {
         _resolvedPath = path;

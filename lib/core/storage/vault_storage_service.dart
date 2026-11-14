@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../features/vault_tree/domain/vault_item.dart';
 import '../database/database_helper.dart';
+import '../pdf/pdf_runtime_initializer.dart';
 
 class ImportedPdfResult {
   const ImportedPdfResult({
@@ -187,6 +188,7 @@ class VaultStorageService {
 
     PdfDocument? doc;
     try {
+      await PdfRuntimeInitializer.ensureInitialized();
       doc = await PdfDocument.openFile(fullPath);
       for (var i = 0; i < doc.pages.length; i++) {
         final page = doc.pages[i];

@@ -1215,6 +1215,54 @@ Consulta [guía local](https://vault.local/guia).
       },
     );
   });
+
+  group('Startup Performance Optimizations', () {
+    test(
+      'getAllItems(includeExtractedText: false) omits bulky extractedText while preserving metadata',
+      () async {
+        DatabaseHelper.ensureFfiInitialized();
+        final db = await databaseFactoryFfi.openDatabase(
+          inMemoryDatabasePath,
+          options: OpenDatabaseOptions(
+            version: 2,
+            onConfigure: (db) async =>
+                db.execute('PRAGMA foreign_keys = ON'),
+            onCreate: (db, _) async => DatabaseHelper.createSchema(db),
+          ),
+        );
+        final repo = VaultRepository(databaseProvider: () async => db);
+
+        final pdf = VaultItem(
+          id: 'perf-pdf-1',
+          parentId: null,
+          title: 'Manual Extenso.pdf',
+          type: VaultItemType.pdf,
+          filePath: 'vault_files/manual.pdf',
+          fileSize: 4096,
+          extractedText: 'Contenido muy extenso de muchas páginas para búsqueda',
+          isPinned: true,
+          sortOrder: 0,
+          updatedAt: DateTime(2026, 2, 1),
+        );
+        await repo.insertItem(pdf);
+
+        final lightList = await repo.getAllItems(includeExtractedText: false);
+        expect(lightList, hasLength(1));
+        expect(lightList.first.title, 'Manual Extenso.pdf');
+        expect(lightList.first.filePath, 'vault_files/manual.pdf');
+        expect(lightList.first.isPinned, isTrue);
+        expect(lightList.first.extractedText, isEmpty);
+
+        final fullList = await repo.getAllItems(includeExtractedText: true);
+        expect(
+          fullList.first.extractedText,
+          'Contenido muy extenso de muchas páginas para búsqueda',
+        );
+
+        await db.close();
+      },
+    );
+  });
 }
 
 class _FakeVaultItemsNotifier extends VaultItemsNotifier {

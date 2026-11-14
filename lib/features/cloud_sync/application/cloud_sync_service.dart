@@ -638,7 +638,7 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       final remoteItems = await _client.fetchItems(token);
       final remoteAnnotations = await _client.fetchAnnotations(token);
 
-      final localItems = await repo.getAllItems();
+      final localItems = await repo.getAllItems(includeExtractedText: false);
       final localById = {for (final i in localItems) i.id: i};
       final dirtyItems = await repo.getDirtyItems();
       final dirtyItemIds = {for (final i in dirtyItems) i.id};
@@ -686,7 +686,8 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
       );
       final docsToDownload = <CloudVaultItemDto>[];
       final existingAfterDeletes = {
-        for (final i in await repo.getAllItems()) i.id: i,
+        for (final i in await repo.getAllItems(includeExtractedText: false))
+          i.id: i,
       };
 
       for (final dto in activeRemoteItems) {
@@ -821,7 +822,8 @@ class CloudSyncNotifier extends Notifier<CloudSyncState> {
 
       // 3. Apply remote PDF annotations
       final currentItemIds = {
-        for (final i in await repo.getAllItems()) i.id,
+        for (final i in await repo.getAllItems(includeExtractedText: false))
+          i.id,
       };
       final localAnns = await repo.getAllAnnotations();
       final localAnnById = {for (final a in localAnns) a.id: a};

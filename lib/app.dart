@@ -21,7 +21,7 @@ class _VaultStudyAppState extends ConsumerState<VaultStudyApp> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(ref.read(cloudSyncProvider.notifier).tryAutoSyncOnStartup());
       }

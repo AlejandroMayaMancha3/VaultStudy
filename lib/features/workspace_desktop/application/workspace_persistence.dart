@@ -69,6 +69,7 @@ class WorkspacePersistence {
   static WorkspaceState? _cachedDesktop;
   static MobileSessionState? _cachedMobile;
   static bool _preloaded = false;
+  static Future<void>? _preloadFuture;
 
   static bool get hasPreloaded => _preloaded;
 
@@ -78,8 +79,12 @@ class WorkspacePersistence {
   static MobileSessionState get cachedMobileState =>
       _cachedMobile ?? MobileSessionState.defaults();
 
-  /// Loads persisted desktop and mobile session state before `runApp`.
-  static Future<void> preload() async {
+  /// Loads persisted desktop and mobile session state before `runApp` or concurrently.
+  static Future<void> preload() {
+    return _preloadFuture ??= _performPreload();
+  }
+
+  static Future<void> _performPreload() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final desktopRaw = prefs.getString(_desktopKey);
@@ -171,5 +176,6 @@ class WorkspacePersistence {
     _cachedDesktop = null;
     _cachedMobile = null;
     _preloaded = false;
+    _preloadFuture = null;
   }
 }

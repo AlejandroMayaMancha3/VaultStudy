@@ -21,7 +21,9 @@ class DatabaseHelper {
   static bool _ffiInitialized = false;
 
   Database? _db;
+  Future<Database>? _dbOpeningFuture;
   String? _vaultRootDir;
+  Future<String>? _vaultRootDirFuture;
 
   static void ensureFfiInitialized() {
     if (_ffiInitialized) return;
@@ -36,6 +38,13 @@ class DatabaseHelper {
   /// Resolves and ensures the vault root directory (default or user-configured).
   Future<String> getVaultRootDir() async {
     if (_vaultRootDir != null) return _vaultRootDir!;
+    return _vaultRootDirFuture ??= _resolveVaultRootDir().catchError((Object e) {
+      _vaultRootDirFuture = null;
+      throw e;
+    });
+  }
+
+  Future<String> _resolveVaultRootDir() async {
     final prefs = await SharedPreferences.getInstance();
     final customDir = prefs.getString(_prefVaultDirKey);
     if (customDir != null && customDir.trim().isNotEmpty) {
@@ -50,7 +59,6 @@ class DatabaseHelper {
 
     final supportDir = await getApplicationSupportDirectory();
     final defaultVaultDir = Directory(p.join(supportDir.path, 'VaultStudy'));
-    await defaultVaultDir.create(recursive: true);
     await Directory(p.join(defaultVaultDir.path, vaultFilesFolderName))
         .create(recursive: true);
     _vaultRootDir = defaultVaultDir.path;
@@ -96,6 +104,7 @@ class DatabaseHelper {
       await prefs.setString(_prefVaultDirKey, path.trim());
     }
     _vaultRootDir = null;
+    _vaultRootDirFuture = null;
   }
 
   Future<bool> getExamReadOnlyMode() async {
@@ -151,13 +160,25 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_db != null && _db!.isOpen) return _db!;
+    return _dbOpeningFuture ??= _openDatabase().catchError((Object e) {
+      _dbOpeningFuture = null;
+      throw e;
+    });
+  }
+
+  Future<Database> _openDatabase() async {
     ensureFfiInitialized();
     final dbPath = await getDatabasePath();
-    _db = await openDatabase(
+    final opened = await openDatabase(
       dbPath,
       version: 2,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
+        try {
+          await db.rawQuery('PRAGMA journal_mode = WAL');
+          await db.execute('PRAGMA synchronous = NORMAL');
+          await db.execute('PRAGMA temp_store = MEMORY');
+        } catch (_) {}
       },
       onCreate: (db, version) async {
         await createSchema(db);
@@ -168,7 +189,8 @@ class DatabaseHelper {
         }
       },
     );
-    return _db!;
+    _db = opened;
+    return opened;
   }
 
   static Future<void> _upgradeToV2(Database db) async {
@@ -253,6 +275,7 @@ class DatabaseHelper {
   }
 
   Future<void> close() async {
+    _dbOpeningFuture = null;
     if (_db != null && _db!.isOpen) {
       await _db!.close();
     }

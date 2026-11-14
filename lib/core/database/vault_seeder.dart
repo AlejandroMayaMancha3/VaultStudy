@@ -15,12 +15,11 @@ class VaultSeeder {
   static const _uuid = Uuid();
 
   static Future<void> seedIfEmpty(Database db) async {
+    final existing = await db.rawQuery('SELECT 1 FROM items LIMIT 1');
+    if (existing.isNotEmpty) return;
+
     final skip = await DatabaseHelper.instance.getSkipSeedAfterSignOut();
     if (skip) return;
-
-    final countResult = await db.rawQuery('SELECT COUNT(*) as c FROM items');
-    final count = (countResult.first['c'] as int?) ?? 0;
-    if (count > 0) return;
 
     await seedForce(db);
   }
@@ -79,62 +78,53 @@ class VaultSeeder {
       ),
     ];
 
-    for (final folder in folders) {
-      await db.insert('items', folder.toMap());
-    }
-
-    // Generate real local PDF files for seeded documents so PDF viewer works 100% offline
-    await _insertSeededPdf(
-      db: db,
-      filesDir: filesDir,
-      id: 'doc-boletin-1',
-      parentId: dwT1Id,
-      title: 'Boletín 1.pdf',
-      type: VaultItemType.pdf,
-      isPinned: true,
-      sortOrder: 0,
-      updatedAt: now.subtract(const Duration(minutes: 45)),
-      pages: _boletin1Pages,
-    );
-
-    await _insertSeededPdf(
-      db: db,
-      filesDir: filesDir,
-      id: 'doc-boletin-2',
-      parentId: dwT1Id,
-      title: 'Boletín 2.pdf',
-      type: VaultItemType.pdf,
-      isPinned: false,
-      sortOrder: 1,
-      updatedAt: now.subtract(const Duration(hours: 5)),
-      pages: _boletin2Pages,
-    );
-
-    await _insertSeededPdf(
-      db: db,
-      filesDir: filesDir,
-      id: 'doc-libro-texto',
-      parentId: dwT1Id,
-      title: 'Libro de texto.pdf',
-      type: VaultItemType.book,
-      isPinned: false,
-      sortOrder: 2,
-      updatedAt: now.subtract(const Duration(days: 3)),
-      pages: _libroTextoPages,
-    );
-
-    await _insertSeededPdf(
-      db: db,
-      filesDir: filesDir,
-      id: 'doc-formulario-ux',
-      parentId: iwT1Id,
-      title: 'Formulario UX.pdf',
-      type: VaultItemType.pdf,
-      isPinned: true,
-      sortOrder: 0,
-      updatedAt: now.subtract(const Duration(hours: 12)),
-      pages: _formularioUxPages,
-    );
+    // Generate real local PDF files for seeded documents in parallel
+    final preparedPdfs = await Future.wait([
+      _prepareSeededPdf(
+        filesDir: filesDir,
+        id: 'doc-boletin-1',
+        parentId: dwT1Id,
+        title: 'Boletín 1.pdf',
+        type: VaultItemType.pdf,
+        isPinned: true,
+        sortOrder: 0,
+        updatedAt: now.subtract(const Duration(minutes: 45)),
+        pages: _boletin1Pages,
+      ),
+      _prepareSeededPdf(
+        filesDir: filesDir,
+        id: 'doc-boletin-2',
+        parentId: dwT1Id,
+        title: 'Boletín 2.pdf',
+        type: VaultItemType.pdf,
+        isPinned: false,
+        sortOrder: 1,
+        updatedAt: now.subtract(const Duration(hours: 5)),
+        pages: _boletin2Pages,
+      ),
+      _prepareSeededPdf(
+        filesDir: filesDir,
+        id: 'doc-libro-texto',
+        parentId: dwT1Id,
+        title: 'Libro de texto.pdf',
+        type: VaultItemType.book,
+        isPinned: false,
+        sortOrder: 2,
+        updatedAt: now.subtract(const Duration(days: 3)),
+        pages: _libroTextoPages,
+      ),
+      _prepareSeededPdf(
+        filesDir: filesDir,
+        id: 'doc-formulario-ux',
+        parentId: iwT1Id,
+        title: 'Formulario UX.pdf',
+        type: VaultItemType.pdf,
+        isPinned: true,
+        sortOrder: 0,
+        updatedAt: now.subtract(const Duration(hours: 12)),
+        pages: _formularioUxPages,
+      ),
+    ]);
 
     // Seeded Notes
     final notes = [
@@ -170,26 +160,40 @@ class VaultSeeder {
       ),
     ];
 
-    for (final note in notes) {
-      await db.insert('items', note.toMap());
-    }
-
-    // Seed one sample PDF highlight on Boletín 1 Page 3
-    await db.insert('pdf_annotations', {
-      'id': _uuid.v4(),
-      'item_id': 'doc-boletin-1',
-      'page_number': 3,
-      'rects_json': '[{"l":0.09,"t":0.30,"r":0.88,"b":0.35}]',
-      'selected_text':
-          'GROUP BY con condicion HAVING count(*) > 2 garantizando WHERE previo',
-      'color_hex': '#4EDEA3',
-      'note': 'Clave para pregunta 3.1 del examen',
-      'created_at': now.toIso8601String(),
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final folder in folders) {
+        batch.insert('items', folder.toMap());
+      }
+      for (final pdf in preparedPdfs) {
+        batch.insert('items', pdf.item.toMap());
+        for (var i = 0; i < pdf.pages.length; i++) {
+          batch.insert('pdf_pages', {
+            'item_id': pdf.item.id,
+            'page_number': i + 1,
+            'content': pdf.pages[i].join('\n'),
+          });
+        }
+      }
+      for (final note in notes) {
+        batch.insert('items', note.toMap());
+      }
+      batch.insert('pdf_annotations', {
+        'id': _uuid.v4(),
+        'item_id': 'doc-boletin-1',
+        'page_number': 3,
+        'rects_json': '[{"l":0.09,"t":0.30,"r":0.88,"b":0.35}]',
+        'selected_text':
+            'GROUP BY con condicion HAVING count(*) > 2 garantizando WHERE previo',
+        'color_hex': '#4EDEA3',
+        'note': 'Clave para pregunta 3.1 del examen',
+        'created_at': now.toIso8601String(),
+      });
+      await batch.commit(noResult: true);
     });
   }
 
-  static Future<void> _insertSeededPdf({
-    required Database db,
+  static Future<({VaultItem item, List<List<String>> pages})> _prepareSeededPdf({
     required String filesDir,
     required String id,
     required String parentId,
@@ -203,7 +207,7 @@ class VaultSeeder {
     final safeName = '${id}_${title.replaceAll(' ', '_')}';
     final fullPath = p.join(filesDir, safeName);
     final bytes = MinimalPdfGenerator.buildPdf(title: title, pagesLines: pages);
-    await File(fullPath).writeAsBytes(bytes, flush: true);
+    await File(fullPath).writeAsBytes(bytes);
 
     final relativePath = p.join(DatabaseHelper.vaultFilesFolderName, safeName);
     final fullExtracted = pages.map((lines) => lines.join(' ')).join('\n');
@@ -220,17 +224,7 @@ class VaultSeeder {
       sortOrder: sortOrder,
       updatedAt: updatedAt,
     );
-
-    await db.insert('items', item.toMap());
-    final batch = db.batch();
-    for (var i = 0; i < pages.length; i++) {
-      batch.insert('pdf_pages', {
-        'item_id': id,
-        'page_number': i + 1,
-        'content': pages[i].join('\n'),
-      });
-    }
-    await batch.commit(noResult: true);
+    return (item: item, pages: pages);
   }
 
   static final List<List<String>> _boletin1Pages = [
