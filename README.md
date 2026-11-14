@@ -7,7 +7,7 @@
 ## Descarga rápida de la APK (Android)
 
 > **Descarga directa desde el móvil (1 clic):**  
-> [**Descargar VaultStudy v1.0.0 (`app-release.apk`)**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/app-release.apk)
+> [**Descargar VaultStudy v1.0.1 (`app-release.apk`)**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/app-release.apk)
 
 Si estás leyendo esto desde el ordenador, escanea este código QR con la cámara de tu móvil para descargar el APK directamente:
 
@@ -21,6 +21,9 @@ Si estás leyendo esto desde el ordenador, escanea este código QR con la cámar
 1. Pulsa en el enlace directo de arriba (o ve a [**Releases**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest) y descarga `app-release.apk`).
 2. Abre el archivo descargado desde tus notificaciones o tu gestor de archivos.
 3. Si Android lo solicita la primera vez, habilita **"Instalar aplicaciones desconocidas"** para tu navegador o gestor de archivos.
+
+### Descarga rápida para Windows (`.exe` portable)
+* [**Descargar VaultStudy v1.0.1 para Windows (`VaultStudy-Windows-x64.zip`)**](https://github.com/AlejandroMayaMancha3/VaultStudy/releases/latest/download/VaultStudy-Windows-x64.zip) — descomprime la carpeta y ejecuta `vaultstudy.exe`.
 
 ---
 
