@@ -60,37 +60,3 @@ Si estás leyendo esto desde el ordenador, escanea este código QR con la cámar
 VaultStudy cambia automáticamente su interfaz según el tamaño de pantalla (`lib/app.dart`):
 * **Escritorio (`DesktopShell`)**: barra lateral en árbol, pestañas múltiples, visor dividido y soporte *Drag & Drop*.
 * **Móvil (`MobileShell`)**: navegación inferior por pestañas, carrusel de fijados, carpetas desplegables, sección de archivos en raíz y lector dedicado (`MobileReaderScreen`).
-
----
-
-## Compilar desde el código fuente
-
-### Requisitos
-* [Flutter SDK](https://docs.flutter.dev/get-started/install) (Dart SDK `^3.14.0`)
-* Para **Windows**: Visual Studio / Build Tools con carga de desarrollo C++ de escritorio.
-* Para **Android**: Android Studio + Android SDK + NDK.
-
-### Comandos básicos
-
-```bash
-# Instalar dependencias
-flutter pub get
-
-# Ejecutar pruebas automatizadas
-flutter test
-
-# Compilar para Windows
-flutter build windows --release
-
-# Compilar APK para Android
-flutter build apk --release
-```
-
-### Variables de entorno y OAuth móvil (opcional)
-Puedes usar tus propias credenciales públicas de Supabase copiando `.env.example` a `.env` y compilando con:
-
-```bash
-flutter build apk --release --dart-define-from-file=.env
-```
-
-Para habilitar **GitHub OAuth en Android**, añade la URL de retorno `vaultstudy://login-callback` en el panel de Supabase bajo **Authentication → URL Configuration → Redirect URLs**.
