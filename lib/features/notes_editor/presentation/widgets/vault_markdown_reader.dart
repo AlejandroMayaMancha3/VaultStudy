@@ -21,6 +21,7 @@ class VaultMarkdownReader extends StatelessWidget {
     this.readOnly = false,
     this.searchHighlight = '',
     this.headingKeys,
+    this.onSelectionChanged,
   });
 
   final String contentMd;
@@ -28,6 +29,7 @@ class VaultMarkdownReader extends StatelessWidget {
   final bool readOnly;
   final String searchHighlight;
   final Map<int, GlobalKey>? headingKeys;
+  final ValueChanged<String>? onSelectionChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -49,14 +51,41 @@ class VaultMarkdownReader extends StatelessWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var i = 0; i < blocks.length; i++) ...[
-          _buildBlock(blocks[i], i),
-          if (i < blocks.length - 1) const SizedBox(height: 14),
+    return SelectionArea(
+      onSelectionChanged: (content) =>
+          onSelectionChanged?.call(content?.plainText ?? ''),
+      contextMenuBuilder: (ctx, selectableRegionState) {
+        final buttonItems = selectableRegionState.contextMenuButtonItems
+            .map(
+              (item) => switch (item.type) {
+                ContextMenuButtonType.copy => ContextMenuButtonItem(
+                    onPressed: item.onPressed,
+                    type: item.type,
+                    label: 'Copiar',
+                  ),
+                ContextMenuButtonType.selectAll => ContextMenuButtonItem(
+                    onPressed: item.onPressed,
+                    type: item.type,
+                    label: 'Seleccionar todo',
+                  ),
+                _ => item,
+              },
+            )
+            .toList();
+        return AdaptiveTextSelectionToolbar.buttonItems(
+          anchors: selectableRegionState.contextMenuAnchors,
+          buttonItems: buttonItems,
+        );
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < blocks.length; i++) ...[
+            _buildBlock(blocks[i], i),
+            if (i < blocks.length - 1) const SizedBox(height: 14),
+          ],
         ],
-      ],
+      ),
     );
   }
 
@@ -67,16 +96,20 @@ class VaultMarkdownReader extends StatelessWidget {
           padding: const EdgeInsets.only(top: 6),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'H${b.level}',
-                  style: AppTypography.badgeMono.copyWith(
-                    color: b.level == 1 ? AppColors.primary : AppColors.secondary,
+              SelectionContainer.disabled(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'H${b.level}',
+                    style: AppTypography.badgeMono.copyWith(
+                      color:
+                          b.level == 1 ? AppColors.primary : AppColors.secondary,
+                    ),
                   ),
                 ),
               ),
@@ -123,16 +156,19 @@ class VaultMarkdownReader extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(AppBreakpoints.radiusSm),
-                ),
-                child: const Icon(
-                  Icons.bolt_rounded,
-                  size: 18,
-                  color: AppColors.onPrimary,
+              SelectionContainer.disabled(
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius:
+                        BorderRadius.circular(AppBreakpoints.radiusSm),
+                  ),
+                  child: const Icon(
+                    Icons.bolt_rounded,
+                    size: 18,
+                    color: AppColors.onPrimary,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -140,34 +176,36 @@ class VaultMarkdownReader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          '${b.tag} DE EXAMEN',
-                          style: AppTypography.labelMono.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'PRIORIDAD ALTA',
-                            style: AppTypography.badgeMono.copyWith(
-                              color: AppColors.primaryFixed,
-                              fontSize: 9.5,
+                    SelectionContainer.disabled(
+                      child: Row(
+                        children: [
+                          Text(
+                            '${b.tag} DE EXAMEN',
+                            style: AppTypography.labelMono.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'PRIORIDAD ALTA',
+                              style: AppTypography.badgeMono.copyWith(
+                                color: AppColors.primaryFixed,
+                                fontSize: 9.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 6),
                     _RichInlineText(
@@ -195,66 +233,71 @@ class VaultMarkdownReader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'BITÁCORA RÁPIDA (LOCAL)',
-                    style: AppTypography.labelMono.copyWith(
-                      color: AppColors.outline,
-                      fontSize: 10.5,
+              SelectionContainer.disabled(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'BITÁCORA RÁPIDA (LOCAL)',
+                      style: AppTypography.labelMono.copyWith(
+                        color: AppColors.outline,
+                        fontSize: 10.5,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${b.entries.where((e) => !e.checked).length} pendientes',
-                    style: AppTypography.monoSm.copyWith(
-                      color: AppColors.secondary,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      '${b.entries.where((e) => !e.checked).length} pendientes',
+                      style: AppTypography.monoSm.copyWith(
+                        color: AppColors.secondary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(height: 8),
               for (final entry in b.entries)
-                InkWell(
-                  onTap: readOnly || onToggleChecklist == null
-                      ? null
-                      : () => onToggleChecklist!(
-                            entry.lineIndex,
-                            !entry.checked,
-                          ),
-                  borderRadius: BorderRadius.circular(AppBreakpoints.radiusSm),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          entry.checked
-                              ? Icons.check_box_rounded
-                              : Icons.check_box_outline_blank_rounded,
-                          size: 18,
-                          color: entry.checked
-                              ? AppColors.primary
-                              : AppColors.outline,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _RichInlineText(
-                            text: entry.text,
-                            baseStyle: AppTypography.bodySm.copyWith(
-                              color: entry.checked
-                                  ? AppColors.onSurfaceVariant
-                                  : AppColors.onSurface,
-                              decoration: entry.checked
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                            searchHighlight: searchHighlight,
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      InkWell(
+                        onTap: readOnly || onToggleChecklist == null
+                            ? null
+                            : () => onToggleChecklist!(
+                                  entry.lineIndex,
+                                  !entry.checked,
+                                ),
+                        borderRadius:
+                            BorderRadius.circular(AppBreakpoints.radiusSm),
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8, bottom: 2),
+                          child: Icon(
+                            entry.checked
+                                ? Icons.check_box_rounded
+                                : Icons.check_box_outline_blank_rounded,
+                            size: 18,
+                            color: entry.checked
+                                ? AppColors.primary
+                                : AppColors.outline,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      Expanded(
+                        child: _RichInlineText(
+                          text: entry.text,
+                          baseStyle: AppTypography.bodySm.copyWith(
+                            color: entry.checked
+                                ? AppColors.onSurfaceVariant
+                                : AppColors.onSurface,
+                            decoration: entry.checked
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                          searchHighlight: searchHighlight,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -275,11 +318,13 @@ class VaultMarkdownReader extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '• ',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
+                      const SelectionContainer.disabled(
+                        child: Text(
+                          '• ',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       Expanded(
@@ -560,11 +605,13 @@ class _VaultImageBlockViewState extends State<_VaultImageBlockView> {
                         ),
                       ),
                     ),
-                    Text(
-                      'Clic para ampliar',
-                      style: AppTypography.badgeMono.copyWith(
-                        fontSize: 10,
-                        color: AppColors.outline,
+                    SelectionContainer.disabled(
+                      child: Text(
+                        'Clic para ampliar',
+                        style: AppTypography.badgeMono.copyWith(
+                          fontSize: 10,
+                          color: AppColors.outline,
+                        ),
                       ),
                     ),
                   ],
@@ -591,7 +638,7 @@ class _RichInlineText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SelectableText.rich(
+    return Text.rich(
       TextSpan(
         style: baseStyle,
         children: _parseInlineSpans(context, text, baseStyle),
@@ -622,28 +669,13 @@ class _RichInlineText extends StatelessWidget {
       final token = match.group(0)!;
       if (token.startsWith('`') && token.endsWith('`')) {
         final inner = token.substring(1, token.length - 1);
-        spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHighest,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: AppColors.outlineVariant.withValues(alpha: 0.4),
-                  width: 0.7,
-                ),
-              ),
-              child: Text(
-                inner,
-                style: AppTypography.monoSm.copyWith(
-                  color: AppColors.secondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+        _addPlainWithHighlight(
+          spans,
+          inner,
+          AppTypography.monoSm.copyWith(
+            color: AppColors.secondary,
+            fontWeight: FontWeight.w600,
+            backgroundColor: AppColors.surfaceHighest,
           ),
         );
       } else if (token.startsWith('**') && token.endsWith('**')) {

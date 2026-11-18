@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1332,6 +1333,60 @@ Consulta [guía local](https://vault.local/guia).
       // Too far away -> null
       expect(findClosestCharIndex(rects, 300, 500, maxMargin: 44), isNull);
     });
+
+    testWidgets(
+      'VaultMarkdownReader supports drag and double-click text selection',
+      (tester) async {
+        String selectedText = '';
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: AppTheme.dark,
+            home: Scaffold(
+              body: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: VaultMarkdownReader(
+                  contentMd: '# Tema Principal\n\nAlgoritmo Quicksort ordenado.',
+                  onSelectionChanged: (text) => selectedText = text,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Double-click on the paragraph center ("Quicksort")
+        final paraCenter =
+            tester.getCenter(find.textContaining('Algoritmo Quicksort'));
+        await tester.tapAt(paraCenter, kind: PointerDeviceKind.mouse);
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(paraCenter, kind: PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+
+        expect(selectedText.trim(), isNotEmpty);
+
+        // Drag from heading across into the paragraph (skipping H1 badge)
+        final headingLeft =
+            tester.getTopLeft(find.text('Tema Principal')) + const Offset(4, 10);
+        final paraRight = tester.getBottomRight(
+              find.textContaining('Algoritmo Quicksort'),
+            ) -
+            const Offset(8, 8);
+        final dragGesture = await tester.startGesture(
+          headingLeft,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pump();
+        await dragGesture.moveTo(paraRight);
+        await tester.pump();
+        await dragGesture.up();
+        await tester.pumpAndSettle();
+
+        expect(selectedText, contains('Principal'));
+        expect(selectedText, contains('Algoritmo'));
+        expect(selectedText, isNot(contains('H1')));
+      },
+    );
   });
 }
 

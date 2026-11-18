@@ -147,98 +147,100 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Code block header (wraps gracefully on narrow phone screens)
-          Container(
-            color: AppColors.surfaceHigh,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _WindowDot(color: AppColors.error),
-                    const SizedBox(width: 5),
-                    const _WindowDot(color: AppColors.secondaryContainer),
-                    const SizedBox(width: 5),
-                    const _WindowDot(color: AppColors.primary),
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceContainer,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        widget.language.toUpperCase(),
-                        style: AppTypography.badgeMono.copyWith(
-                          color: AppColors.secondary,
+          SelectionContainer.disabled(
+            child: Container(
+              color: AppColors.surfaceHigh,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const _WindowDot(color: AppColors.error),
+                      const SizedBox(width: 5),
+                      const _WindowDot(color: AppColors.secondaryContainer),
+                      const SizedBox(width: 5),
+                      const _WindowDot(color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
                         ),
-                      ),
-                    ),
-                    if (widget.filePath != null &&
-                        widget.filePath!.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 180),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainer,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                         child: Text(
-                          widget.filePath!,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTypography.monoSm.copyWith(
-                            color: AppColors.outline,
+                          widget.language.toUpperCase(),
+                          style: AppTypography.badgeMono.copyWith(
+                            color: AppColors.secondary,
                           ),
                         ),
                       ),
-                    ],
-                  ],
-                ),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (isWeb) ...[
-                      _HeaderActionChip(
-                        icon: _showHtmlPreview
-                            ? Icons.code_rounded
-                            : Icons.public_rounded,
-                        label: _showHtmlPreview ? 'Código' : 'Vista Web',
-                        active: _showHtmlPreview,
-                        onTap: () => setState(
-                          () => _showHtmlPreview = !_showHtmlPreview,
+                      if (widget.filePath != null &&
+                          widget.filePath!.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 180),
+                          child: Text(
+                            widget.filePath!,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.monoSm.copyWith(
+                              color: AppColors.outline,
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
+                    ],
+                  ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (isWeb) ...[
+                        _HeaderActionChip(
+                          icon: _showHtmlPreview
+                              ? Icons.code_rounded
+                              : Icons.public_rounded,
+                          label: _showHtmlPreview ? 'Código' : 'Vista Web',
+                          active: _showHtmlPreview,
+                          onTap: () => setState(
+                            () => _showHtmlPreview = !_showHtmlPreview,
+                          ),
+                        ),
+                        _HeaderActionChip(
+                          icon: Icons.open_in_browser_rounded,
+                          label: 'Navegador',
+                          onTap: () => _openInBrowser(widget.code),
+                        ),
+                      ],
+                      if (isRunnable)
+                        _HeaderActionChip(
+                          icon: _running
+                              ? Icons.hourglass_top_rounded
+                              : Icons.play_arrow_rounded,
+                          label: _running ? 'Ejecutando...' : 'Ejecutar',
+                          active: _execResult != null,
+                          accentColor: AppColors.primary,
+                          onTap: _running ? null : _runSnippet,
+                        ),
                       _HeaderActionChip(
-                        icon: Icons.open_in_browser_rounded,
-                        label: 'Navegador',
-                        onTap: () => _openInBrowser(widget.code),
+                        icon: _copied ? Icons.check_rounded : Icons.copy_rounded,
+                        label: _copied ? '¡Copiado!' : 'Copiar código',
+                        active: _copied,
+                        accentColor: AppColors.primary,
+                        onTap: _copyCode,
                       ),
                     ],
-                    if (isRunnable)
-                      _HeaderActionChip(
-                        icon: _running
-                            ? Icons.hourglass_top_rounded
-                            : Icons.play_arrow_rounded,
-                        label: _running ? 'Ejecutando...' : 'Ejecutar',
-                        active: _execResult != null,
-                        accentColor: AppColors.primary,
-                        onTap: _running ? null : _runSnippet,
-                      ),
-                    _HeaderActionChip(
-                      icon: _copied ? Icons.check_rounded : Icons.copy_rounded,
-                      label: _copied ? '¡Copiado!' : 'Copiar código',
-                      active: _copied,
-                      accentColor: AppColors.primary,
-                      onTap: _copyCode,
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
           // HTML live visual preview or syntax-highlighted source code
@@ -265,22 +267,25 @@ class _CodeBlockCardState extends State<CodeBlockCard> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      for (var i = 0; i < lines.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 14),
-                          child: Text(
-                            '${i + 1}',
-                            style: AppTypography.monoMd.copyWith(
-                              fontSize: 12.5,
-                              height: 1.55,
-                              color: AppColors.outline.withValues(alpha: 0.55),
+                  SelectionContainer.disabled(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var i = 0; i < lines.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 14),
+                            child: Text(
+                              '${i + 1}',
+                              style: AppTypography.monoMd.copyWith(
+                                fontSize: 12.5,
+                                height: 1.55,
+                                color:
+                                    AppColors.outline.withValues(alpha: 0.55),
+                              ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                   HighlightView(
                     widget.code,

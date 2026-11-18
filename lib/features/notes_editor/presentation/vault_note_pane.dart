@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -45,6 +46,7 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
   bool _showOutline = false;
   bool _isDraggingFile = false;
   Map<int, GlobalKey> _headingKeys = {};
+  final ValueNotifier<String> _selectedReaderText = ValueNotifier<String>('');
 
   @override
   void initState() {
@@ -78,6 +80,7 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
       _titleController.text = widget.item.title;
       _contentController.text = widget.item.contentMd;
       _headingKeys = {};
+      _selectedReaderText.value = '';
     } else if (oldWidget.item.contentMd != widget.item.contentMd &&
         widget.item.contentMd != _contentController.text) {
       _contentController.text = widget.item.contentMd;
@@ -87,9 +90,23 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    _selectedReaderText.dispose();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
+  }
+
+  Future<void> _copySelectedReaderText() async {
+    final text = _selectedReaderText.value.trim();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: _selectedReaderText.value));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Texto copiado al portapapeles'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   void _scheduleAutosave() {
@@ -569,95 +586,160 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
     required int snippetCount,
     required bool readOnlyExam,
   }) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 96),
+    return Stack(
       children: [
-        if (readOnlyExam)
-          Text(
-            _titleController.text,
-            style: AppTypography.headlineLg,
-          )
-        else
-          TextField(
-            controller: _titleController,
-            onChanged: (_) => _scheduleAutosave(),
-            style: AppTypography.headlineLg,
-            decoration: const InputDecoration(
-              filled: false,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-              hintText: 'Título de la nota...',
-            ),
-          ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 12,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            if (breadcrumb.isNotEmpty)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.folder_outlined,
-                    size: 14,
-                    color: AppColors.secondary,
+        SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 96),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (readOnlyExam)
+                SelectableText(
+                  _titleController.text,
+                  style: AppTypography.headlineLg,
+                )
+              else
+                TextField(
+                  controller: _titleController,
+                  onChanged: (_) => _scheduleAutosave(),
+                  style: AppTypography.headlineLg,
+                  decoration: const InputDecoration(
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: 'Título de la nota...',
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    breadcrumb,
-                    style: AppTypography.monoSm.copyWith(
-                      color: AppColors.secondary,
+                ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 12,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (breadcrumb.isNotEmpty)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.folder_outlined,
+                          size: 14,
+                          color: AppColors.secondary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          breadcrumb,
+                          style: AppTypography.monoSm.copyWith(
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                      ],
                     ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.schedule_rounded,
+                        size: 14,
+                        color: AppColors.outline,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _formatTimestamp(widget.item.updatedAt),
+                        style: AppTypography.monoSm.copyWith(
+                          color: AppColors.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.code_rounded,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        '$snippetCount snippets de código',
+                        style: AppTypography.monoSm.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.schedule_rounded,
-                  size: 14,
-                  color: AppColors.outline,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  _formatTimestamp(widget.item.updatedAt),
-                  style: AppTypography.monoSm.copyWith(
-                    color: AppColors.outline,
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.code_rounded,
-                  size: 14,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  '$snippetCount snippets de código',
-                  style: AppTypography.monoSm.copyWith(
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ],
+              const SizedBox(height: 20),
+              VaultMarkdownReader(
+                contentMd: _contentController.text,
+                readOnly: readOnlyExam,
+                onToggleChecklist: _onToggleChecklist,
+                searchHighlight: widget.searchHighlight,
+                headingKeys: _headingKeys,
+                onSelectionChanged: (text) => _selectedReaderText.value = text,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 20),
-        VaultMarkdownReader(
-          contentMd: _contentController.text,
-          readOnly: readOnlyExam,
-          onToggleChecklist: _onToggleChecklist,
-          searchHighlight: widget.searchHighlight,
-          headingKeys: _headingKeys,
+        ValueListenableBuilder<String>(
+          valueListenable: _selectedReaderText,
+          builder: (context, selectedText, _) {
+            if (selectedText.trim().isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Positioned(
+              right: 20,
+              bottom: widget.showTopBar ? 20 : 76,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _copySelectedReaderText,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceHighest.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.55),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black54,
+                          blurRadius: 14,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.copy_rounded,
+                          size: 15,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Copiar selección',
+                          style: AppTypography.labelMono.copyWith(
+                            color: AppColors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ],
     );
