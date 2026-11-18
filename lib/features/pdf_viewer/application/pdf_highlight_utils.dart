@@ -221,3 +221,165 @@ class AnnotationHistoryStack {
     _redo.clear();
   }
 }
+
+/// Parses manual zoom input like `'120'`, `'120%'`, or `' 85,5 % '` into a
+/// clamped scale factor (`0.25`..`5.0` by default).
+double? parsePdfZoomPercent(
+  String rawInput, {
+  double minPercent = 25,
+  double maxPercent = 500,
+}) {
+  final cleaned =
+      rawInput.trim().replaceAll('%', '').replaceAll(',', '.').trim();
+  if (cleaned.isEmpty) return null;
+  final parsed = double.tryParse(cleaned);
+  if (parsed == null || !parsed.isFinite || parsed <= 0) return null;
+  final clamped = parsed.clamp(minPercent, maxPercent);
+  return clamped / 100.0;
+}
+
+/// Parses a page-jump input into a 1-based page index clamped to `1..totalPages`.
+int? parsePdfPageInput(String rawInput, {required int totalPages}) {
+  if (totalPages <= 0) return null;
+  final cleaned = rawInput.trim();
+  if (cleaned.isEmpty) return null;
+  final parsed = int.tryParse(cleaned);
+  if (parsed == null || parsed <= 0) return null;
+  return parsed.clamp(1, totalPages);
+}
+
+final RegExp _wordCharRegex = RegExp(r'[\p{L}\p{N}_]', unicode: true);
+
+/// Finds inclusive `[start, end]` bounds for the word at [index] inside [text].
+({int start, int end})? findWordRangeAt(String text, int index) {
+  if (text.isEmpty) return null;
+  var pivot = index.clamp(0, text.length - 1);
+
+  if (!_wordCharRegex.hasMatch(text[pivot])) {
+    if (pivot > 0 && _wordCharRegex.hasMatch(text[pivot - 1])) {
+      pivot--;
+    } else if (pivot + 1 < text.length &&
+        _wordCharRegex.hasMatch(text[pivot + 1])) {
+      pivot++;
+    } else if (text[pivot].trim().isEmpty) {
+      return null;
+    } else {
+      return (start: pivot, end: pivot);
+    }
+  }
+
+  var start = pivot;
+  while (start > 0 && _wordCharRegex.hasMatch(text[start - 1])) {
+    start--;
+  }
+  var end = pivot;
+  while (end + 1 < text.length && _wordCharRegex.hasMatch(text[end + 1])) {
+    end++;
+  }
+  return (start: start, end: end);
+}
+
+/// Finds inclusive `[start, end]` bounds for the non-empty line at [index].
+({int start, int end})? findLineRangeAt(String text, int index) {
+  if (text.isEmpty) return null;
+  final pivot = index.clamp(0, text.length - 1);
+
+  var start = pivot;
+  while (start > 0 && text[start - 1] != '\n' && text[start - 1] != '\r') {
+    start--;
+  }
+  var end = pivot;
+  while (end + 1 < text.length &&
+      text[end + 1] != '\n' &&
+      text[end + 1] != '\r') {
+    end++;
+  }
+  while (start <= end && text[start].trim().isEmpty) {
+    start++;
+  }
+  while (end >= start && text[end].trim().isEmpty) {
+    end--;
+  }
+  if (start > end) return null;
+  return (start: start, end: end);
+}
+
+/// Lightweight PDF character rectangle (`top >= bottom` in PDF coordinate space).
+class PdfCharBounds {
+  const PdfCharBounds({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+}
+
+/// Finds the closest character index to `(px, py)` in PDF coordinates, prioritizing
+/// characters on the same horizontal line band for smooth margin-tolerant selection.
+int? findClosestCharIndex(
+  List<PdfCharBounds> rects,
+  double px,
+  double py, {
+  double maxMargin = 48.0,
+}) {
+  if (rects.isEmpty) return null;
+
+  // 1. Exact hit inside any character bounds
+  for (var i = 0; i < rects.length; i++) {
+    final r = rects[i];
+    if (px >= r.left && px <= r.right && py >= r.bottom && py <= r.top) {
+      return i;
+    }
+  }
+
+  // 2. Same horizontal line band -> snap horizontally cleanly without jumping lines
+  int? bestLineIdx;
+  var bestLineDx = double.infinity;
+  var bestLineDy = double.infinity;
+
+  for (var i = 0; i < rects.length; i++) {
+    final r = rects[i];
+    final bandPad = ((r.top - r.bottom) * 0.45).clamp(3.0, 8.0);
+    if (py < r.bottom - bandPad || py > r.top + bandPad) continue;
+
+    final dx = px < r.left ? r.left - px : (px > r.right ? px - r.right : 0.0);
+    if (maxMargin.isFinite && dx > maxMargin) continue;
+
+    final midY = (r.top + r.bottom) * 0.5;
+    final dy = (py - midY).abs();
+    if (dx < bestLineDx - 0.5 ||
+        ((dx - bestLineDx).abs() <= 0.5 && dy < bestLineDy)) {
+      bestLineDx = dx;
+      bestLineDy = dy;
+      bestLineIdx = i;
+    }
+  }
+  if (bestLineIdx != null) {
+    return bestLineIdx;
+  }
+
+  // 3. Fallback for inter-line gaps or slightly above/below a paragraph
+  int? bestFallbackIdx;
+  var bestScore = double.infinity;
+  final maxDist2 = maxMargin.isFinite ? maxMargin * maxMargin : double.infinity;
+
+  for (var i = 0; i < rects.length; i++) {
+    final r = rects[i];
+    final dx = px < r.left ? r.left - px : (px > r.right ? px - r.right : 0.0);
+    final dy = py < r.bottom ? r.bottom - py : (py > r.top ? py - r.top : 0.0);
+    final dist2 = dx * dx + dy * dy;
+    if (dist2 > maxDist2) continue;
+
+    final weightedScore = dx * dx + (dy * 2.5) * (dy * 2.5);
+    if (weightedScore < bestScore) {
+      bestScore = weightedScore;
+      bestFallbackIdx = i;
+    }
+  }
+  return bestFallbackIdx;
+}

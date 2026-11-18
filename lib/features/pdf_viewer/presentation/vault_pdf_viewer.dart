@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -53,6 +57,10 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   late PdfTextSearcher _textSearcher;
   final FocusNode _inDocSearchFocus = FocusNode();
   final TextEditingController _inDocSearchController = TextEditingController();
+  final FocusNode _zoomEditFocus = FocusNode();
+  final TextEditingController _zoomEditController = TextEditingController();
+  final FocusNode _pageEditFocus = FocusNode();
+  final TextEditingController _pageEditController = TextEditingController();
 
   final AnnotationHistoryStack _history = AnnotationHistoryStack();
 
@@ -63,12 +71,37 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   int _currentPage = 1;
   int _totalPages = 1;
   double _zoom = 1.0;
+  bool _isEditingZoom = false;
+  bool _isEditingPage = false;
   int _rotationTurns = 0;
 
   PdfMarkerTool _toolMode = PdfMarkerTool.browse;
   String _selectedColorHex = PdfHighlightPalette.options.first.hex;
   bool _showSearchBar = false;
   PdfTextSelection? _activeSelection;
+  final ValueNotifier<bool> _hasSelectionNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<Offset?> _floatingMenuAnchor =
+      ValueNotifier<Offset?>(null);
+  final GlobalKey _viewerStackKey = GlobalKey();
+  bool _useTouchInput =
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  final Map<int, PdfPageText> _pageTextCache = {};
+  final Map<int, List<PdfCharBounds>> _pageCharBoundsCache = {};
+  final Map<int, Future<PdfPageText?>> _pendingTextLoads = {};
+
+  DateTime? _lastDoubleTapAt;
+  Offset? _lastDoubleTapDocPos;
+  DateTime? _lastDragFinishedAt;
+  Offset? _mouseDownGlobal;
+  bool _didDragSelect = false;
+  bool _isMousePanningMiddle = false;
+  Offset? _lastPanGlobal;
+  PdfTextSelectionPoint? _mouseSelectionAnchor;
+  PdfTextSelectionPoint? _lastAppliedStart;
+  PdfTextSelectionPoint? _lastAppliedEnd;
+  Offset? _pendingDragGlobalPos;
+  bool _dragFrameScheduled = false;
 
   // Embedded PDF outline & persistent page bookmarks
   List<PdfOutlineNode> _outlineNodes = const [];
@@ -82,6 +115,10 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
 
   bool get canUndo => _history.canUndo;
   bool get canRedo => _history.canRedo;
+  bool get hasSelection => _hasLiveSelection;
+  double get currentZoom => _zoom;
+  int get currentPage => _currentPage;
+  int get totalPages => _totalPages;
   PdfMarkerTool get toolMode => _toolMode;
   String get _bookmarksPrefsKey => 'vaultstudy_pdf_bookmarks_${widget.item.id}';
 
@@ -106,6 +143,11 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
       _currentPage = widget.initialPage;
       _rotationTurns = 0;
       _activeSelection = null;
+      _hasSelectionNotifier.value = false;
+      _floatingMenuAnchor.value = null;
+      _pageTextCache.clear();
+      _pageCharBoundsCache.clear();
+      _pendingTextLoads.clear();
       _outlineNodes = const [];
       _bookmarkedPages = [];
       _dragPageNumber = null;
@@ -127,6 +169,12 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     _textSearcher.dispose();
     _inDocSearchController.dispose();
     _inDocSearchFocus.dispose();
+    _zoomEditController.dispose();
+    _zoomEditFocus.dispose();
+    _pageEditController.dispose();
+    _pageEditFocus.dispose();
+    _hasSelectionNotifier.dispose();
+    _floatingMenuAnchor.dispose();
     super.dispose();
   }
 
@@ -139,6 +187,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     final nextZoom = _controller.currentZoom;
     if ((nextZoom - _zoom).abs() > 0.01) {
       setState(() => _zoom = nextZoom);
+      _notifyHistory();
     }
   }
 
@@ -278,6 +327,477 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     return _activeSelection?.hasSelectedText ?? false;
   }
 
+  /// Copies the active PDF text selection to the system clipboard cleanly.
+  Future<bool> copySelectedText([PdfTextSelection? selection]) async {
+    final PdfTextSelection? target = selection ??
+        (_controller.isReady &&
+                _controller.textSelectionDelegate.hasSelectedText
+            ? _controller.textSelectionDelegate
+            : _activeSelection);
+    if (target == null || !target.hasSelectedText) return false;
+
+    if (!target.isCopyAllowed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Este PDF restringe la copia de texto.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return false;
+    }
+
+    String selectedText = '';
+    try {
+      selectedText = await target.getSelectedText();
+    } catch (_) {}
+
+    var copied = false;
+    if (selectedText.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: selectedText));
+      copied = true;
+    } else if (target is PdfTextSelectionDelegate) {
+      copied = await target.copyTextSelection();
+    }
+
+    if (copied && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Texto copiado al portapapeles'),
+          duration: Duration(milliseconds: 1500),
+        ),
+      );
+    }
+    return copied;
+  }
+
+  /// Applies a manual zoom percentage (e.g. `120` for `120%`) centered on view.
+  Future<void> setZoomPercent(double percent) async {
+    if (!_controller.isReady) return;
+    final minZ = _controller.minScale.clamp(0.1, 1.0);
+    final maxZ = _controller.maxScale.clamp(1.0, 8.0);
+    final targetScale = (percent / 100.0).clamp(minZ, maxZ);
+    await _controller.setZoom(_controller.centerPosition, targetScale);
+    if (mounted) {
+      setState(() => _zoom = _controller.currentZoom);
+      _notifyHistory();
+    }
+  }
+
+  void _startZoomEdit() {
+    if (!_controller.isReady) return;
+    final currentPct = '${(_zoom * 100).round()}';
+    _zoomEditController.value = TextEditingValue(
+      text: currentPct,
+      selection: TextSelection(baseOffset: 0, extentOffset: currentPct.length),
+    );
+    setState(() => _isEditingZoom = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _zoomEditFocus.requestFocus();
+      _zoomEditController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _zoomEditController.text.length,
+      );
+    });
+  }
+
+  void _cancelZoomEdit() {
+    if (!_isEditingZoom) return;
+    setState(() => _isEditingZoom = false);
+  }
+
+  Future<void> _commitZoomEdit() async {
+    if (!_isEditingZoom) return;
+    final parsedScale = parsePdfZoomPercent(_zoomEditController.text);
+    setState(() => _isEditingZoom = false);
+    if (parsedScale == null || !_controller.isReady) return;
+    await setZoomPercent(parsedScale * 100.0);
+  }
+
+  /// Jumps cleanly to a 1-based page number inside the document.
+  Future<void> goToPageNumber(int pageNumber) async {
+    if (!_controller.isReady || _totalPages <= 0) return;
+    final clamped = pageNumber.clamp(1, _totalPages);
+    await _controller.goToPage(pageNumber: clamped);
+  }
+
+  /// Fits the entire current page inside the viewport (width & height).
+  Future<void> fitFullPage() async {
+    if (!_controller.isReady) return;
+    final m = _controller.calcMatrixForFit(pageNumber: _currentPage);
+    if (m != null) {
+      await _controller.goTo(m);
+    }
+  }
+
+  /// Fits the current page width inside the viewport.
+  Future<void> fitPageWidth() async {
+    if (!_controller.isReady) return;
+    final m = _controller.calcMatrixFitWidthForPage(pageNumber: _currentPage);
+    if (m != null) {
+      await _controller.goTo(m);
+    }
+  }
+
+  void _startPageEdit() {
+    if (!_controller.isReady || _totalPages <= 0) return;
+    final currentText = '$_currentPage';
+    _pageEditController.value = TextEditingValue(
+      text: currentText,
+      selection: TextSelection(baseOffset: 0, extentOffset: currentText.length),
+    );
+    setState(() => _isEditingPage = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _pageEditFocus.requestFocus();
+      _pageEditController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _pageEditController.text.length,
+      );
+    });
+  }
+
+  void _cancelPageEdit() {
+    if (!_isEditingPage) return;
+    setState(() => _isEditingPage = false);
+  }
+
+  Future<void> _commitPageEdit() async {
+    if (!_isEditingPage) return;
+    final targetPage = parsePdfPageInput(
+      _pageEditController.text,
+      totalPages: _totalPages,
+    );
+    setState(() => _isEditingPage = false);
+    if (targetPage == null || !_controller.isReady) return;
+    await goToPageNumber(targetPage);
+  }
+
+  Future<PdfPageText?> _getOrLoadPageText(int pageNumber) async {
+    final existing = _pageTextCache[pageNumber];
+    if (existing != null) return existing;
+
+    final pending = _pendingTextLoads[pageNumber];
+    if (pending != null) return pending;
+
+    if (!_controller.isReady ||
+        pageNumber < 1 ||
+        pageNumber > _controller.pages.length) {
+      return null;
+    }
+
+    final page = _controller.pages[pageNumber - 1];
+    final Future<PdfPageText?> future =
+        page.loadStructuredText(ensureLoaded: true).then<PdfPageText?>((loaded) {
+      _pendingTextLoads.remove(pageNumber);
+      if (!mounted || loaded.charRects.isEmpty) return null;
+      _pageTextCache[pageNumber] = loaded;
+      _pageCharBoundsCache[pageNumber] = [
+        for (final r in loaded.charRects)
+          PdfCharBounds(
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+          ),
+      ];
+      if (_didDragSelect) {
+        _scheduleDragSelectionUpdate();
+      }
+      return loaded;
+    }).catchError((Object _) {
+      _pendingTextLoads.remove(pageNumber);
+      return null;
+    });
+    return _pendingTextLoads[pageNumber] = future;
+  }
+
+  void _warmupAroundPage(int pageNumber) {
+    if (!_controller.isReady) return;
+    final total = _controller.pages.length;
+    for (final p in [pageNumber, pageNumber - 1, pageNumber + 1]) {
+      if (p >= 1 && p <= total && !_pageTextCache.containsKey(p)) {
+        unawaited(_getOrLoadPageText(p));
+      }
+    }
+  }
+
+  int? _findClosestPageIndex(Offset docPos, {required double maxMargin}) {
+    if (!_controller.isReady) return null;
+    final layouts = _controller.layout.pageLayouts;
+    if (layouts.isEmpty) return null;
+
+    int? bestIdx;
+    var bestDist2 = double.infinity;
+    final maxDist2 = maxMargin.isFinite ? maxMargin * maxMargin : double.infinity;
+
+    for (var i = 0; i < layouts.length; i++) {
+      final rect = layouts[i];
+      if (rect.contains(docPos)) return i;
+      final dx = docPos.dx < rect.left
+          ? rect.left - docPos.dx
+          : (docPos.dx > rect.right ? docPos.dx - rect.right : 0.0);
+      final dy = docPos.dy < rect.top
+          ? rect.top - docPos.dy
+          : (docPos.dy > rect.bottom ? docPos.dy - rect.bottom : 0.0);
+      final dist2 = dx * dx + dy * dy;
+      if (dist2 <= maxDist2 && dist2 < bestDist2) {
+        bestDist2 = dist2;
+        bestIdx = i;
+      }
+    }
+    return bestIdx;
+  }
+
+  PdfTextSelectionPoint? _findPointInCachedPage(
+    int pageIdx,
+    Offset docPos, {
+    required double maxMargin,
+  }) {
+    final pageNumber = pageIdx + 1;
+    final pageText = _pageTextCache[pageNumber];
+    final bounds = _pageCharBoundsCache[pageNumber];
+    if (pageText == null || bounds == null || bounds.isEmpty) {
+      unawaited(_getOrLoadPageText(pageNumber));
+      return null;
+    }
+
+    final page = _controller.pages[pageIdx];
+    final pageRect = _controller.layout.pageLayouts[pageIdx];
+    final pt = docPos
+        .translate(-pageRect.left, -pageRect.top)
+        .toPdfPoint(page: page, scaledPageSize: pageRect.size);
+
+    final idx = findClosestCharIndex(
+      bounds,
+      pt.x,
+      pt.y,
+      maxMargin: maxMargin,
+    );
+    if (idx == null) return null;
+    return PdfTextSelectionPoint(pageText, idx);
+  }
+
+  PdfTextSelectionPoint? _findPointNearDocument(
+    Offset docPos, {
+    required double maxMargin,
+  }) {
+    final pageIdx = _findClosestPageIndex(docPos, maxMargin: maxMargin);
+    if (pageIdx == null) return null;
+    return _findPointInCachedPage(pageIdx, docPos, maxMargin: maxMargin);
+  }
+
+  Future<PdfTextSelectionPoint?> _findOrLoadPointNearDocument(
+    Offset docPos, {
+    required double maxMargin,
+  }) async {
+    final pageIdx = _findClosestPageIndex(docPos, maxMargin: maxMargin);
+    if (pageIdx == null) return null;
+    await _getOrLoadPageText(pageIdx + 1);
+    if (!mounted || !_controller.isReady) return null;
+    return _findPointInCachedPage(pageIdx, docPos, maxMargin: maxMargin);
+  }
+
+  PdfTextSelectionPoint? _findPointNearGlobal(
+    Offset globalPos, {
+    required double maxMargin,
+  }) {
+    if (!_controller.isReady) return null;
+    final docPos = _controller.globalToDocument(globalPos);
+    if (docPos == null) return null;
+    return _findPointNearDocument(docPos, maxMargin: maxMargin);
+  }
+
+  void _showFloatingMenuAtGlobal(Offset globalPos) {
+    final stackBox =
+        _viewerStackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (stackBox == null || !stackBox.hasSize) return;
+    final local = stackBox.globalToLocal(globalPos);
+    _floatingMenuAnchor.value = local;
+  }
+
+  void _showFloatingMenuAtDocument(Offset docPos) {
+    if (!_controller.isReady) return;
+    final globalPos = _controller.documentToGlobal(docPos);
+    if (globalPos == null) return;
+    _showFloatingMenuAtGlobal(globalPos);
+  }
+
+  Future<void> _applySelectionPoints(
+    PdfTextSelectionPoint anchor,
+    PdfTextSelectionPoint end,
+  ) async {
+    if (!_controller.isReady) return;
+    final ordered = PdfTextSelectionRange.fromPoints(anchor, end);
+    if (_lastAppliedStart?.text.pageNumber == ordered.start.text.pageNumber &&
+        _lastAppliedStart?.index == ordered.start.index &&
+        _lastAppliedEnd?.text.pageNumber == ordered.end.text.pageNumber &&
+        _lastAppliedEnd?.index == ordered.end.index) {
+      return;
+    }
+    _lastAppliedStart = ordered.start;
+    _lastAppliedEnd = ordered.end;
+    await _controller.textSelectionDelegate.setTextSelectionPointRange(ordered);
+    if (!_hasSelectionNotifier.value) {
+      _hasSelectionNotifier.value = true;
+      _notifyHistory();
+    }
+  }
+
+  void _flushDragSelectionAt(Offset targetGlobal) {
+    if (!mounted || !_controller.isReady) return;
+    _mouseSelectionAnchor ??=
+        (_mouseDownGlobal != null
+            ? _findPointNearGlobal(_mouseDownGlobal!, maxMargin: 48.0)
+            : null) ??
+        _findPointNearGlobal(targetGlobal, maxMargin: 48.0);
+    final anchor = _mouseSelectionAnchor;
+    if (anchor == null) return;
+
+    final endPt = _findPointNearGlobal(
+      targetGlobal,
+      maxMargin: double.infinity,
+    );
+    if (endPt == null) return;
+    unawaited(_applySelectionPoints(anchor, endPt));
+  }
+
+  void _scheduleDragSelectionUpdate() {
+    if (_dragFrameScheduled) return;
+    _dragFrameScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _dragFrameScheduled = false;
+      if (!mounted || !_didDragSelect || !_controller.isReady) return;
+      final targetGlobal = _pendingDragGlobalPos;
+      if (targetGlobal == null) return;
+      _flushDragSelectionAt(targetGlobal);
+    });
+  }
+
+  void _handleViewerPointerDown(PointerDownEvent event) {
+    if (_toolMode != PdfMarkerTool.browse) return;
+    if (event.kind == PointerDeviceKind.touch) {
+      if (!_useTouchInput) {
+        setState(() => _useTouchInput = true);
+      }
+      _floatingMenuAnchor.value = null;
+      return;
+    }
+    if (event.kind != PointerDeviceKind.mouse) return;
+    if (_useTouchInput) {
+      setState(() => _useTouchInput = false);
+    }
+
+    _floatingMenuAnchor.value = null;
+
+    if ((event.buttons & kMiddleMouseButton) != 0) {
+      _isMousePanningMiddle = true;
+      _lastPanGlobal = event.position;
+      return;
+    }
+
+    if ((event.buttons & kPrimaryMouseButton) != 0) {
+      _mouseDownGlobal = event.position;
+      _didDragSelect = false;
+      _lastAppliedStart = null;
+      _lastAppliedEnd = null;
+      _mouseSelectionAnchor =
+          _findPointNearGlobal(event.position, maxMargin: 48.0);
+    }
+  }
+
+  void _handleViewerPointerMove(PointerMoveEvent event) {
+    if (_isMousePanningMiddle && _controller.isReady) {
+      final prev = _lastPanGlobal;
+      _lastPanGlobal = event.position;
+      if (prev != null) {
+        final deltaDoc = (event.position - prev) / _controller.currentZoom;
+        final nextCenter = _controller.centerPosition - deltaDoc;
+        unawaited(
+          _controller.goTo(
+            _controller.calcMatrixFor(nextCenter),
+            duration: Duration.zero,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (_toolMode != PdfMarkerTool.browse || _useTouchInput) return;
+    final downPos = _mouseDownGlobal;
+    if (downPos == null || (event.buttons & kPrimaryMouseButton) == 0) return;
+
+    if (!_didDragSelect) {
+      if ((event.position - downPos).distance < 4.0) return;
+      _didDragSelect = true;
+      _lastDoubleTapAt = null;
+    }
+
+    _pendingDragGlobalPos = event.position;
+    _scheduleDragSelectionUpdate();
+  }
+
+  void _handleViewerPointerUpOrCancel(PointerEvent event) {
+    _isMousePanningMiddle = false;
+    _lastPanGlobal = null;
+    if (_didDragSelect) {
+      _flushDragSelectionAt(event.position);
+      final hasSel = _lastAppliedStart != null && _lastAppliedEnd != null;
+      _didDragSelect = false;
+      _mouseDownGlobal = null;
+      _lastDragFinishedAt = DateTime.now();
+      if (hasSel && !_useTouchInput) {
+        _showFloatingMenuAtGlobal(event.position);
+      }
+      return;
+    }
+    _mouseDownGlobal = null;
+  }
+
+  void _handleViewerPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent && _floatingMenuAnchor.value != null) {
+      _floatingMenuAnchor.value = null;
+    }
+  }
+
+  /// Handles double-click word selection and triple-click line selection at [documentPosition].
+  Future<void> _selectWordOrLineAt(
+    PdfViewerController controller,
+    Offset documentPosition, {
+    required bool lineOnly,
+  }) async {
+    final hitPoint = await _findOrLoadPointNearDocument(
+      documentPosition,
+      maxMargin: 44.0,
+    );
+    if (!mounted || hitPoint == null) return;
+
+    final pageText = hitPoint.text;
+    final fullText = pageText.fullText;
+    if (fullText.isEmpty || pageText.charRects.isEmpty) return;
+
+    final target = lineOnly
+        ? findLineRangeAt(fullText, hitPoint.index)
+        : findWordRangeAt(fullText, hitPoint.index);
+    if (target == null) return;
+
+    final startPt = PdfTextSelectionPoint(pageText, target.start);
+    final endPt = PdfTextSelectionPoint(pageText, target.end);
+    _lastAppliedStart = startPt;
+    _lastAppliedEnd = endPt;
+    await controller.textSelectionDelegate.setTextSelectionPointRange(
+      PdfTextSelectionRange.fromPoints(startPt, endPt),
+    );
+    if (!mounted) return;
+    _hasSelectionNotifier.value = true;
+    _notifyHistory();
+    if (!_useTouchInput) {
+      _showFloatingMenuAtDocument(documentPosition);
+    }
+  }
+
   /// Immediately highlights any active text selection (bypassing pdfrx's 300ms
   /// selection-change debounce), or toggles direct drag-to-highlight mode.
   Future<void> triggerHighlightAction() async {
@@ -291,6 +811,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
 
     if (!await _ensureWritable()) return;
 
+    _floatingMenuAnchor.value = null;
     setState(() {
       _toolMode = _toolMode == PdfMarkerTool.highlight
           ? PdfMarkerTool.browse
@@ -302,6 +823,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   }
 
   void setToolMode(PdfMarkerTool mode) {
+    _floatingMenuAnchor.value = null;
     setState(() {
       _toolMode = mode;
       _dragPageNumber = null;
@@ -371,7 +893,11 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     ref.invalidate(pdfAnnotationsProvider(widget.item.id));
     ref.read(cloudSyncProvider.notifier).scheduleAutoSync();
     if (mounted) {
-      setState(() => _activeSelection = null);
+      _activeSelection = null;
+      _lastAppliedStart = null;
+      _lastAppliedEnd = null;
+      _hasSelectionNotifier.value = false;
+      _floatingMenuAnchor.value = null;
       _notifyHistory();
     }
   }
@@ -803,11 +1329,57 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   Widget build(BuildContext context) {
     final annotations =
         ref.watch(pdfAnnotationsProvider(widget.item.id)).value ?? [];
-    final hasSelection = _hasLiveSelection;
     final showRibbon = _toolMode != PdfMarkerTool.browse;
 
     return CallbackShortcuts(
       bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true): () {
+          if (!_inDocSearchFocus.hasFocus &&
+              !_zoomEditFocus.hasFocus &&
+              !_pageEditFocus.hasFocus &&
+              _hasLiveSelection) {
+            unawaited(copySelectedText());
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyC, meta: true): () {
+          if (!_inDocSearchFocus.hasFocus &&
+              !_zoomEditFocus.hasFocus &&
+              !_pageEditFocus.hasFocus &&
+              _hasLiveSelection) {
+            unawaited(copySelectedText());
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true): () {
+          if (!_inDocSearchFocus.hasFocus && !_zoomEditFocus.hasFocus) {
+            _startPageEdit();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
+          if (!_inDocSearchFocus.hasFocus && !_zoomEditFocus.hasFocus) {
+            _startPageEdit();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.digit0, control: true): () {
+          if (!_inDocSearchFocus.hasFocus &&
+              !_zoomEditFocus.hasFocus &&
+              !_pageEditFocus.hasFocus) {
+            unawaited(setZoomPercent(100));
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.numpad0, control: true): () {
+          if (!_inDocSearchFocus.hasFocus &&
+              !_zoomEditFocus.hasFocus &&
+              !_pageEditFocus.hasFocus) {
+            unawaited(setZoomPercent(100));
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.digit0, meta: true): () {
+          if (!_inDocSearchFocus.hasFocus &&
+              !_zoomEditFocus.hasFocus &&
+              !_pageEditFocus.hasFocus) {
+            unawaited(setZoomPercent(100));
+          }
+        },
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
           if (!_inDocSearchFocus.hasFocus) undo();
         },
@@ -873,32 +1445,84 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                         ),
                       ),
                     ),
-                    if (hasSelection)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: InkWell(
-                          onTap: triggerHighlightAction,
-                          borderRadius: BorderRadius.circular(4),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: PdfHighlightPalette.colorFromHex(
-                                _selectedColorHex,
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _hasSelectionNotifier,
+                      builder: (_, hasSel, _) {
+                        if (!hasSel) return const SizedBox.shrink();
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: InkWell(
+                                onTap: () {
+                                  _floatingMenuAnchor.value = null;
+                                  unawaited(copySelectedText());
+                                },
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceContainer,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: AppColors.secondary.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.content_copy_rounded,
+                                        size: 12,
+                                        color: AppColors.secondary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'COPIAR',
+                                        style: AppTypography.badgeMono.copyWith(
+                                          color: AppColors.secondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(
-                              'SUBRAYAR',
-                              style: AppTypography.badgeMono.copyWith(
-                                color: AppColors.onPrimary,
+                            Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: InkWell(
+                                onTap: triggerHighlightAction,
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: PdfHighlightPalette.colorFromHex(
+                                      _selectedColorHex,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    'SUBRAYAR',
+                                    style: AppTypography.badgeMono.copyWith(
+                                      color: AppColors.onPrimary,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                      ),
+                          ],
+                        );
+                      },
+                    ),
                     IconButton(
                       tooltip: 'Deshacer subrayado (Ctrl+Z)',
                       icon: Icon(
@@ -1076,6 +1700,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                   if (_showOutlineDrawer) _buildPdfOutlinePanel(),
                   Expanded(
                     child: Stack(
+                      key: _viewerStackKey,
                       children: [
                   if (_loadingPath)
                     const Center(child: CircularProgressIndicator())
@@ -1102,71 +1727,191 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                       ),
                     )
                   else
-                    Padding(
-                      padding: EdgeInsets.only(
-                        bottom: widget.showBottomCapsule ? 64 : 0,
-                      ),
-                      child: RotatedBox(
-                        quarterTurns: _rotationTurns,
-                        child: PdfViewer.file(
-                          _resolvedPath!,
-                          controller: _controller,
-                          initialPageNumber: widget.initialPage,
-                          params: PdfViewerParams(
-                            backgroundColor: AppColors.surfaceLowest,
-                            margin: 16,
-                            scrollByMouseWheel: 0.25,
-                            enableKeyboardNavigation: true,
-                            pagePaintCallbacks: [
-                              _textSearcher.pageTextMatchPaintCallback,
-                            ],
-                            customizeContextMenuItems: (params, items) {
-                              if (params.textSelectionDelegate.hasSelectedText) {
-                                items.insert(
-                                  0,
-                                  ContextMenuButtonItem(
-                                    label: 'Subrayar',
-                                    onPressed: () {
-                                      params.dismissContextMenu();
-                                      _saveCurrentSelectionAsHighlight(
-                                        params.textSelectionDelegate,
-                                      );
-                                    },
-                                  ),
-                                );
-                              }
-                            },
-                            textSelectionParams: PdfTextSelectionParams(
-                              enabled: _toolMode == PdfMarkerTool.browse,
-                              onTextSelectionChange: (sel) {
-                                if (mounted) {
-                                  setState(() => _activeSelection = sel);
+                    Listener(
+                      behavior: HitTestBehavior.translucent,
+                      onPointerDown: _handleViewerPointerDown,
+                      onPointerMove: _handleViewerPointerMove,
+                      onPointerUp: _handleViewerPointerUpOrCancel,
+                      onPointerCancel: _handleViewerPointerUpOrCancel,
+                      onPointerSignal: _handleViewerPointerSignal,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          bottom: widget.showBottomCapsule ? 64 : 0,
+                        ),
+                        child: RotatedBox(
+                          quarterTurns: _rotationTurns,
+                          child: PdfViewer.file(
+                            _resolvedPath!,
+                            controller: _controller,
+                            initialPageNumber: widget.initialPage,
+                            params: PdfViewerParams(
+                              backgroundColor: AppColors.surfaceLowest,
+                              margin: 16,
+                              scrollByMouseWheel: 0.25,
+                              panEnabled: _useTouchInput,
+                              scaleEnabled: true,
+                              enableKeyboardNavigation: true,
+                              sizeDelegateProvider:
+                                  const PdfViewerSizeDelegateProviderLegacy(
+                                minScale: 0.25,
+                                maxScale: 5.0,
+                                useAlternativeFitScaleAsMinScale: false,
+                              ),
+                              pagePaintCallbacks: [
+                                _textSearcher.pageTextMatchPaintCallback,
+                              ],
+                              customizeContextMenuItems: (params, items) {
+                                for (var i = 0; i < items.length; i++) {
+                                  final item = items[i];
+                                  if (item.type == ContextMenuButtonType.copy) {
+                                    items[i] = ContextMenuButtonItem(
+                                      label: 'Copiar',
+                                      type: ContextMenuButtonType.copy,
+                                      onPressed: () {
+                                        params.dismissContextMenu();
+                                        unawaited(
+                                          copySelectedText(
+                                            params.textSelectionDelegate,
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  } else if (item.type ==
+                                      ContextMenuButtonType.selectAll) {
+                                    items[i] = item.copyWith(
+                                      label: 'Seleccionar todo',
+                                    );
+                                  }
+                                }
+                                if (params.textSelectionDelegate.hasSelectedText) {
+                                  items.add(
+                                    ContextMenuButtonItem(
+                                      label: 'Subrayar',
+                                      onPressed: () {
+                                        params.dismissContextMenu();
+                                        _saveCurrentSelectionAsHighlight(
+                                          params.textSelectionDelegate,
+                                        );
+                                      },
+                                    ),
+                                  );
                                 }
                               },
-                            ),
-                            onViewerReady: (document, controller) {
-                              if (!mounted) return;
-                              final page =
-                                  controller.pageNumber ?? widget.initialPage;
-                              setState(() {
-                                _totalPages = document.pages.length;
-                                _currentPage = page;
-                                _zoom = controller.currentZoom;
-                              });
-                              document.loadOutline().then((nodes) {
-                                if (mounted) {
-                                  setState(() => _outlineNodes = nodes);
+                              textSelectionParams: PdfTextSelectionParams(
+                                enabled: _toolMode == PdfMarkerTool.browse,
+                                enableSelectionHandles:
+                                    _useTouchInput ? null : true,
+                                buildSelectionHandle: _useTouchInput
+                                    ? null
+                                    : (_, _, _) => null,
+                                magnifier: _useTouchInput
+                                    ? const PdfViewerSelectionMagnifierParams()
+                                    : const PdfViewerSelectionMagnifierParams(
+                                        enabled: false,
+                                      ),
+                                showContextMenuAutomatically: _useTouchInput,
+                                onTextSelectionChange: (sel) {
+                                  if (!mounted) return;
+                                  _activeSelection = sel;
+                                  final nextHasSel = sel.hasSelectedText;
+                                  if (!nextHasSel) {
+                                    _lastAppliedStart = null;
+                                    _lastAppliedEnd = null;
+                                    _floatingMenuAnchor.value = null;
+                                  }
+                                  if (_hasSelectionNotifier.value != nextHasSel) {
+                                    _hasSelectionNotifier.value = nextHasSel;
+                                    _notifyHistory();
+                                  }
+                                },
+                              ),
+                              onGeneralTap: (context, controller, details) {
+                                if (_toolMode != PdfMarkerTool.browse) {
+                                  return false;
                                 }
-                              }).catchError((_) {});
-                            },
-                            onPageChanged: (pageNumber) {
-                              if (!mounted || pageNumber == null) return;
-                              setState(() => _currentPage = pageNumber);
-                              ref
-                                  .read(workspaceProvider.notifier)
-                                  .updateTabPage(widget.item.id, pageNumber);
-                              widget.onPageChanged?.call(pageNumber);
-                            },
+                                if (details.type ==
+                                    PdfViewerGeneralTapType.doubleTap) {
+                                  _lastDoubleTapAt = DateTime.now();
+                                  _lastDoubleTapDocPos =
+                                      details.documentPosition;
+                                  unawaited(
+                                    _selectWordOrLineAt(
+                                      controller,
+                                      details.documentPosition,
+                                      lineOnly: false,
+                                    ),
+                                  );
+                                  return true;
+                                }
+                                if (details.type ==
+                                        PdfViewerGeneralTapType.tap &&
+                                    _lastDoubleTapAt != null &&
+                                    _lastDoubleTapDocPos != null &&
+                                    DateTime.now()
+                                            .difference(_lastDoubleTapAt!)
+                                            .inMilliseconds <=
+                                        450 &&
+                                    (details.documentPosition -
+                                                _lastDoubleTapDocPos!)
+                                            .distance <=
+                                        20) {
+                                  _lastDoubleTapAt = null;
+                                  unawaited(
+                                    _selectWordOrLineAt(
+                                      controller,
+                                      details.documentPosition,
+                                      lineOnly: true,
+                                    ),
+                                  );
+                                  return true;
+                                }
+                                if (details.type ==
+                                    PdfViewerGeneralTapType.tap) {
+                                  if (_lastDragFinishedAt != null &&
+                                      DateTime.now()
+                                              .difference(_lastDragFinishedAt!)
+                                              .inMilliseconds <=
+                                          300) {
+                                    _lastDragFinishedAt = null;
+                                    return true;
+                                  }
+                                  _lastDoubleTapAt = null;
+                                  _lastAppliedStart = null;
+                                  _lastAppliedEnd = null;
+                                  _floatingMenuAnchor.value = null;
+                                  if (_hasSelectionNotifier.value) {
+                                    _hasSelectionNotifier.value = false;
+                                    _notifyHistory();
+                                  }
+                                }
+                                return false;
+                              },
+                              onViewerReady: (document, controller) {
+                                if (!mounted) return;
+                                final page =
+                                    controller.pageNumber ?? widget.initialPage;
+                                setState(() {
+                                  _totalPages = document.pages.length;
+                                  _currentPage = page;
+                                  _zoom = controller.currentZoom;
+                                });
+                                _warmupAroundPage(page);
+                                _notifyHistory();
+                                document.loadOutline().then((nodes) {
+                                  if (mounted) {
+                                    setState(() => _outlineNodes = nodes);
+                                  }
+                                }).catchError((_) {});
+                              },
+                              onPageChanged: (pageNumber) {
+                                if (!mounted || pageNumber == null) return;
+                                setState(() => _currentPage = pageNumber);
+                                _warmupAroundPage(pageNumber);
+                                ref
+                                    .read(workspaceProvider.notifier)
+                                    .updateTabPage(widget.item.id, pageNumber);
+                                widget.onPageChanged?.call(pageNumber);
+                              },
                             pageOverlaysBuilder: (context, pageRect, page) {
                               final pageAnns = annotations
                                   .where(
@@ -1352,6 +2097,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                         ),
                       ),
                     ),
+                  ),
                   // Minimalist floating capsule controls (Bottom Centered)
                   if (widget.showBottomCapsule &&
                       !_loadingPath &&
@@ -1398,18 +2144,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                                           )
                                       : null,
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                  ),
-                                  child: Text(
-                                    'Pág $_currentPage / $_totalPages',
-                                    style: AppTypography.monoSm.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
+                                _buildPageIndicator(),
                                 _CapsuleIconBtn(
                                   icon: Icons.chevron_right_rounded,
                                   tooltip: 'Página siguiente',
@@ -1422,73 +2157,119 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                                 _CapsuleDivider(),
                                 _CapsuleIconBtn(
                                   icon: Icons.remove_rounded,
-                                  tooltip: 'Reducir zoom',
+                                  tooltip: 'Reducir zoom (Ctrl + Rueda)',
                                   onTap: () => _controller.zoomDown(),
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                  ),
-                                  child: Text(
-                                    '${(_zoom * 100).round()}%',
-                                    style: AppTypography.monoSm.copyWith(
-                                      color: AppColors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
+                                _buildZoomIndicator(),
                                 _CapsuleIconBtn(
                                   icon: Icons.add_rounded,
-                                  tooltip: 'Aumentar zoom',
+                                  tooltip: 'Aumentar zoom (Ctrl + Rueda)',
                                   onTap: () => _controller.zoomUp(),
                                 ),
+                                const SizedBox(width: 4),
+                                _buildZoom100Button(),
                                 _CapsuleDivider(),
-                                InkWell(
-                                  onTap: triggerHighlightAction,
-                                  borderRadius: BorderRadius.circular(999),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 5,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: (_toolMode ==
-                                                  PdfMarkerTool.highlight ||
-                                              hasSelection)
-                                          ? PdfHighlightPalette.colorFromHex(
-                                              _selectedColorHex,
-                                            )
-                                          : AppColors.surfaceContainer,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.draw_rounded,
-                                          size: 14,
-                                          color: (_toolMode ==
-                                                      PdfMarkerTool.highlight ||
-                                                  hasSelection)
-                                              ? AppColors.onPrimary
-                                              : AppColors.primary,
+                                ValueListenableBuilder<bool>(
+                                  valueListenable: _hasSelectionNotifier,
+                                  builder: (_, hasSel, _) => Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (hasSel) ...[
+                                        InkWell(
+                                          onTap: () {
+                                            _floatingMenuAnchor.value = null;
+                                            unawaited(copySelectedText());
+                                          },
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 5,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.secondary,
+                                              borderRadius:
+                                                  BorderRadius.circular(999),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(
+                                                  Icons.content_copy_rounded,
+                                                  size: 14,
+                                                  color: AppColors.onSecondary,
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  'Copiar',
+                                                  style: AppTypography.badgeMono
+                                                      .copyWith(
+                                                    color:
+                                                        AppColors.onSecondary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                         ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          hasSelection
-                                              ? 'Subrayar'
-                                              : 'Marcador',
-                                          style:
-                                              AppTypography.badgeMono.copyWith(
+                                        const SizedBox(width: 6),
+                                      ],
+                                      InkWell(
+                                        onTap: triggerHighlightAction,
+                                        borderRadius:
+                                            BorderRadius.circular(999),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 5,
+                                          ),
+                                          decoration: BoxDecoration(
                                             color: (_toolMode ==
                                                         PdfMarkerTool
                                                             .highlight ||
-                                                    hasSelection)
-                                                ? AppColors.onPrimary
-                                                : AppColors.onSurface,
+                                                    hasSel)
+                                                ? PdfHighlightPalette
+                                                    .colorFromHex(
+                                                    _selectedColorHex,
+                                                  )
+                                                : AppColors.surfaceContainer,
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.draw_rounded,
+                                                size: 14,
+                                                color: (_toolMode ==
+                                                            PdfMarkerTool
+                                                                .highlight ||
+                                                        hasSel)
+                                                    ? AppColors.onPrimary
+                                                    : AppColors.primary,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                hasSel
+                                                    ? 'Subrayar'
+                                                    : 'Marcador',
+                                                style: AppTypography.badgeMono
+                                                    .copyWith(
+                                                  color: (_toolMode ==
+                                                              PdfMarkerTool
+                                                                  .highlight ||
+                                                          hasSel)
+                                                      ? AppColors.onPrimary
+                                                      : AppColors.onSurface,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 const SizedBox(width: 2),
@@ -1500,14 +2281,12 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                                 _CapsuleIconBtn(
                                   icon: Icons.fit_screen_rounded,
                                   tooltip: 'Ajustar al ancho',
-                                  onTap: () {
-                                    if (!_controller.isReady) return;
-                                    final m = _controller
-                                        .calcMatrixFitWidthForPage(
-                                      pageNumber: _currentPage,
-                                    );
-                                    if (m != null) _controller.goTo(m);
-                                  },
+                                  onTap: fitPageWidth,
+                                ),
+                                _CapsuleIconBtn(
+                                  icon: Icons.crop_free_rounded,
+                                  tooltip: 'Ajustar página completa',
+                                  onTap: fitFullPage,
                                 ),
                                 _CapsuleIconBtn(
                                   icon: Icons.rotate_right_rounded,
@@ -1523,6 +2302,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                         ),
                       ),
                     ),
+                  _buildFloatingSelectionPill(),
                 ],
               ),
             ),
@@ -1530,6 +2310,306 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFloatingSelectionPill() {
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: _floatingMenuAnchor,
+      builder: (_, anchor, _) {
+        if (anchor == null || !_hasSelectionNotifier.value) {
+          return const SizedBox.shrink();
+        }
+        final stackBox =
+            _viewerStackKey.currentContext?.findRenderObject() as RenderBox?;
+        final stackWidth = stackBox?.hasSize == true ? stackBox!.size.width : 800.0;
+        final stackHeight =
+            stackBox?.hasSize == true ? stackBox!.size.height : 600.0;
+
+        final left = (anchor.dx - 110.0)
+            .clamp(10.0, math.max(10.0, stackWidth - 250.0))
+            .toDouble();
+        final top = (anchor.dy > 62
+                ? (anchor.dy - 48)
+                    .clamp(8.0, math.max(8.0, stackHeight - 96.0))
+                : (anchor.dy + 14)
+                    .clamp(8.0, math.max(8.0, stackHeight - 96.0)))
+            .toDouble();
+
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceHigh.withValues(alpha: 0.98),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.85),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black54,
+                    blurRadius: 14,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _FloatingSelectionBtn(
+                    icon: Icons.content_copy_rounded,
+                    label: 'Copiar',
+                    color: AppColors.secondary,
+                    onTap: () {
+                      _floatingMenuAnchor.value = null;
+                      unawaited(copySelectedText());
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _FloatingSelectionBtn(
+                    icon: Icons.draw_rounded,
+                    label: 'Subrayar',
+                    color: PdfHighlightPalette.colorFromHex(_selectedColorHex),
+                    onTap: () {
+                      _floatingMenuAnchor.value = null;
+                      unawaited(triggerHighlightAction());
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _FloatingSelectionBtn(
+                    icon: Icons.select_all_rounded,
+                    label: 'Todo',
+                    color: AppColors.onSurfaceVariant,
+                    onTap: () {
+                      _floatingMenuAnchor.value = null;
+                      if (_controller.isReady) {
+                        unawaited(
+                          _controller.textSelectionDelegate.selectAllText(),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPageIndicator() {
+    if (_isEditingPage) {
+      return TapRegion(
+        onTapOutside: (_) => _commitPageEdit(),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): _cancelPageEdit,
+          },
+          child: SizedBox(
+            width: 86,
+            height: 26,
+            child: TextField(
+              controller: _pageEditController,
+              focusNode: _pageEditFocus,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(5),
+              ],
+              style: AppTypography.monoSm.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 4,
+                ),
+                suffixText: '/$_totalPages',
+                suffixStyle: AppTypography.monoSm.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                  fontSize: 10.5,
+                ),
+                filled: true,
+                fillColor: AppColors.surfaceLowest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              onSubmitted: (_) => _commitPageEdit(),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: 'Clic para ir a una página (Ctrl+G)',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.text,
+          child: InkWell(
+            onTap: _startPageEdit,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainer.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Text(
+                'Pág $_currentPage / $_totalPages',
+                style: AppTypography.monoSm.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoom100Button() {
+    final is100 = (_zoom * 100).round() == 100;
+    return Tooltip(
+      message: 'Restablecer zoom al 100% (Ctrl+0)',
+      child: InkWell(
+        onTap: () => setZoomPercent(100),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: is100
+                ? AppColors.primary.withValues(alpha: 0.18)
+                : AppColors.surfaceContainer.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: is100
+                  ? AppColors.primary.withValues(alpha: 0.6)
+                  : AppColors.outlineVariant.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Text(
+            '1:1',
+            style: AppTypography.badgeMono.copyWith(
+              color: is100 ? AppColors.primary : AppColors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZoomIndicator() {
+    if (_isEditingZoom) {
+      return TapRegion(
+        onTapOutside: (_) => _commitZoomEdit(),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): _cancelZoomEdit,
+          },
+          child: SizedBox(
+            width: 68,
+            height: 26,
+            child: TextField(
+              controller: _zoomEditController,
+              focusNode: _zoomEditFocus,
+              autofocus: true,
+              textAlign: TextAlign.center,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              textInputAction: TextInputAction.done,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
+                LengthLimitingTextInputFormatter(6),
+              ],
+              style: AppTypography.monoSm.copyWith(
+                color: AppColors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 4,
+                ),
+                suffixText: '%',
+                suffixStyle: AppTypography.monoSm.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                ),
+                filled: true,
+                fillColor: AppColors.surfaceLowest,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 1.4,
+                  ),
+                ),
+              ),
+              onSubmitted: (_) => _commitZoomEdit(),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Tooltip(
+        message: 'Clic para escribir el zoom manualmente (%)',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.text,
+          child: InkWell(
+            onTap: _startZoomEdit,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainer.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppColors.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Text(
+                '${(_zoom * 100).round()}%',
+                style: AppTypography.monoSm.copyWith(
+                  color: AppColors.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1894,6 +2974,45 @@ class _CapsuleIconBtn extends StatelessWidget {
       onPressed: onTap,
       padding: const EdgeInsets.all(4),
       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+    );
+  }
+}
+
+class _FloatingSelectionBtn extends StatelessWidget {
+  const _FloatingSelectionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(7),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTypography.badgeMono.copyWith(
+                color: AppColors.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

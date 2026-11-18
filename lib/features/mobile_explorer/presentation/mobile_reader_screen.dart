@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_breakpoints.dart';
@@ -8,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/type_badge.dart';
 import '../../notes_editor/presentation/vault_note_pane.dart';
+import '../../pdf_viewer/application/pdf_highlight_utils.dart';
 import '../../pdf_viewer/presentation/vault_pdf_viewer.dart';
 import '../../vault_tree/application/vault_providers.dart';
 import '../../vault_tree/domain/vault_item.dart';
@@ -58,6 +60,143 @@ class _MobileReaderScreenState extends ConsumerState<MobileReaderScreen> {
   void dispose() {
     _noteSearchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openMobilePageJumpDialog() async {
+    final pdfState = _pdfKey.currentState;
+    if (pdfState == null || pdfState.totalPages <= 0) return;
+    final total = pdfState.totalPages;
+    final currentText = '${pdfState.currentPage}';
+    final controller = TextEditingController(text: currentText)
+      ..selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: currentText.length,
+      );
+
+    final rawValue = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceLow,
+        title: const Text('Ir a página'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(5),
+          ],
+          decoration: InputDecoration(
+            hintText: 'Ej: 15',
+            suffixText: '/ $total',
+            helperText: 'Introduce un número entre 1 y $total',
+          ),
+          onSubmitted: (value) => Navigator.pop(ctx, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Ir'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (rawValue == null) return;
+    final target = parsePdfPageInput(rawValue, totalPages: total);
+    if (target == null) return;
+    await pdfState.goToPageNumber(target);
+  }
+
+  Future<void> _openMobileZoomDialog() async {
+    final pdfState = _pdfKey.currentState;
+    if (pdfState == null) return;
+    final currentPct = '${(pdfState.currentZoom * 100).round()}';
+    final controller = TextEditingController(text: currentPct)
+      ..selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: currentPct.length,
+      );
+
+    final rawValue = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surfaceLow,
+        title: const Text('Zoom del PDF (%)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,%]')),
+                LengthLimitingTextInputFormatter(6),
+              ],
+              decoration: const InputDecoration(
+                hintText: 'Ej: 120',
+                suffixText: '%',
+                helperText: 'Rango permitido: 25% – 500%',
+              ),
+              onSubmitted: (value) => Navigator.pop(ctx, value),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                ActionChip(
+                  label: const Text('100%'),
+                  onPressed: () => Navigator.pop(ctx, '__100__'),
+                ),
+                ActionChip(
+                  label: const Text('Al ancho'),
+                  onPressed: () => Navigator.pop(ctx, '__fit_width__'),
+                ),
+                ActionChip(
+                  label: const Text('Página completa'),
+                  onPressed: () => Navigator.pop(ctx, '__fit_page__'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Aplicar'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (rawValue == null) return;
+    if (rawValue == '__100__') {
+      await pdfState.setZoomPercent(100);
+      return;
+    }
+    if (rawValue == '__fit_width__') {
+      await pdfState.fitPageWidth();
+      return;
+    }
+    if (rawValue == '__fit_page__') {
+      await pdfState.fitFullPage();
+      return;
+    }
+    final parsedScale = parsePdfZoomPercent(rawValue);
+    if (parsedScale == null) return;
+    await pdfState.setZoomPercent(parsedScale * 100.0);
   }
 
   Future<void> _openQuickNoteSheet(
@@ -296,6 +435,66 @@ class _MobileReaderScreenState extends ConsumerState<MobileReaderScreen> {
                           ],
                         ),
                       ),
+                      if (item.type.isDocument) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: InkWell(
+                            onTap: _openMobilePageJumpDialog,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceContainer,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: AppColors.outlineVariant.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                '${_pdfKey.currentState?.currentPage ?? _activePage}/${_pdfKey.currentState?.totalPages ?? 1}',
+                                style: AppTypography.monoSm.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: InkWell(
+                            onTap: _openMobileZoomDialog,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceContainer,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: AppColors.outlineVariant.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                              ),
+                              child: Text(
+                                '${((_pdfKey.currentState?.currentZoom ?? 1.0) * 100).round()}%',
+                                style: AppTypography.monoSm.copyWith(
+                                  color: AppColors.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                       IconButton(
                         tooltip: item.isPinned
                             ? 'Desfijar de examen'
@@ -552,6 +751,17 @@ class _MobileReaderScreenState extends ConsumerState<MobileReaderScreen> {
                             }
                           },
                         ),
+                        if (item.type.isDocument &&
+                            (_pdfKey.currentState?.hasSelection ?? false)) ...[
+                          _VerticalSep(),
+                          _BottomToolButton(
+                            icon: Icons.content_copy_rounded,
+                            label: 'Copiar',
+                            color: AppColors.secondary,
+                            onTap: () =>
+                                _pdfKey.currentState?.copySelectedText(),
+                          ),
+                        ],
                         _VerticalSep(),
                         _BottomToolButton(
                           icon: Icons.highlight_rounded,

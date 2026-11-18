@@ -1263,6 +1263,76 @@ Consulta [guía local](https://vault.local/guia).
       },
     );
   });
+
+  group('PDF Zoom & Selection Copy Helpers', () {
+    test('parsePdfZoomPercent parses numeric/percent inputs and clamps bounds', () {
+      expect(parsePdfZoomPercent('120'), closeTo(1.20, 0.0001));
+      expect(parsePdfZoomPercent('185%'), closeTo(1.85, 0.0001));
+      expect(parsePdfZoomPercent(' 85,5 % '), closeTo(0.855, 0.0001));
+      expect(parsePdfZoomPercent('10'), closeTo(0.25, 0.0001));
+      expect(parsePdfZoomPercent('900'), closeTo(5.0, 0.0001));
+      expect(parsePdfZoomPercent(''), isNull);
+      expect(parsePdfZoomPercent('abc'), isNull);
+      expect(parsePdfZoomPercent('0'), isNull);
+      expect(parsePdfZoomPercent('-50'), isNull);
+    });
+
+    test('parsePdfPageInput parses 1-based page numbers and clamps to totalPages', () {
+      expect(parsePdfPageInput('15', totalPages: 42), 15);
+      expect(parsePdfPageInput(' 1 ', totalPages: 42), 1);
+      expect(parsePdfPageInput('999', totalPages: 42), 42);
+      expect(parsePdfPageInput('0', totalPages: 42), isNull);
+      expect(parsePdfPageInput('-3', totalPages: 42), isNull);
+      expect(parsePdfPageInput('abc', totalPages: 42), isNull);
+      expect(parsePdfPageInput('', totalPages: 42), isNull);
+      expect(parsePdfPageInput('5', totalPages: 0), isNull);
+    });
+
+    test('findWordRangeAt & findLineRangeAt isolate clicked word and line cleanly', () {
+      const sample = '1. Fundamentos de Algebra\nSELECT * FROM alumnos;';
+      // Click inside "Fundamentos" (index 5)
+      final wordRange = findWordRangeAt(sample, 5);
+      expect(wordRange, isNotNull);
+      expect(sample.substring(wordRange!.start, wordRange.end + 1), 'Fundamentos');
+
+      // Click inside "Algebra" (index 20)
+      final wordRange2 = findWordRangeAt(sample, 20);
+      expect(wordRange2, isNotNull);
+      expect(sample.substring(wordRange2!.start, wordRange2.end + 1), 'Algebra');
+
+      // Triple click on first line -> full first line
+      final lineRange = findLineRangeAt(sample, 5);
+      expect(lineRange, isNotNull);
+      expect(
+        sample.substring(lineRange!.start, lineRange.end + 1),
+        '1. Fundamentos de Algebra',
+      );
+    });
+
+    test('findClosestCharIndex snaps cleanly from left/right margins and inter-line gaps', () {
+      // Line 1 (y: 700..712), two chars: [100..110], [110..120]
+      // Line 2 (y: 680..692), two chars: [100..110], [110..120]
+      const rects = [
+        PdfCharBounds(left: 100, top: 712, right: 110, bottom: 700), // 0: line 1 start
+        PdfCharBounds(left: 110, top: 712, right: 120, bottom: 700), // 1: line 1 end
+        PdfCharBounds(left: 100, top: 692, right: 110, bottom: 680), // 2: line 2 start
+        PdfCharBounds(left: 110, top: 692, right: 120, bottom: 680), // 3: line 2 end
+      ];
+
+      // Direct hit inside char 1
+      expect(findClosestCharIndex(rects, 115, 706), 1);
+      // 30pt to the left of line 1 in the margin -> snaps to line 1 start (0)
+      expect(findClosestCharIndex(rects, 70, 706), 0);
+      // 30pt to the right of line 2 -> snaps to line 2 end (3)
+      expect(findClosestCharIndex(rects, 150, 686), 3);
+      // Unbounded drag far outside right margin on line 1 -> stays on line 1 end (1)
+      expect(findClosestCharIndex(rects, 300, 705, maxMargin: double.infinity), 1);
+      // Slightly above line 1 within margin -> snaps to line 1
+      expect(findClosestCharIndex(rects, 105, 735, maxMargin: 44), 0);
+      // Too far away -> null
+      expect(findClosestCharIndex(rects, 300, 500, maxMargin: 44), isNull);
+    });
+  });
 }
 
 class _FakeVaultItemsNotifier extends VaultItemsNotifier {
