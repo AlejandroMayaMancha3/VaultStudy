@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,12 +14,15 @@ import 'package:vaultstudy/core/database/database_helper.dart';
 import 'package:vaultstudy/core/database/minimal_pdf_generator.dart';
 import 'package:vaultstudy/core/storage/vault_storage_service.dart';
 import 'package:vaultstudy/core/theme/app_theme.dart';
+import 'package:vaultstudy/features/app_update/application/app_update_service.dart';
+import 'package:vaultstudy/features/app_update/presentation/app_update_dialog.dart';
 import 'package:vaultstudy/features/cloud_sync/application/cloud_sync_service.dart';
 import 'package:vaultstudy/features/cloud_sync/data/secure_session_store.dart';
 import 'package:vaultstudy/features/cloud_sync/data/supabase_cloud_client.dart';
 import 'package:vaultstudy/features/global_search/domain/search_result.dart';
 import 'package:vaultstudy/features/notes_editor/application/code_execution_service.dart';
 import 'package:vaultstudy/features/notes_editor/application/markdown_parser.dart';
+import 'package:vaultstudy/features/notes_editor/presentation/vault_note_pane.dart';
 import 'package:vaultstudy/features/notes_editor/presentation/widgets/code_block_card.dart';
 import 'package:vaultstudy/features/notes_editor/presentation/widgets/vault_markdown_reader.dart';
 import 'package:vaultstudy/features/pdf_viewer/application/pdf_highlight_utils.dart';
@@ -28,6 +32,7 @@ import 'package:vaultstudy/features/vault_tree/domain/vault_item.dart';
 import 'package:vaultstudy/features/vault_tree/presentation/vault_dialogs.dart';
 import 'package:vaultstudy/features/workspace_desktop/application/workspace_persistence.dart';
 import 'package:vaultstudy/features/workspace_desktop/application/workspace_state.dart';
+import 'package:vaultstudy/features/workspace_desktop/presentation/widgets/vault_tree_sidebar.dart';
 
 void main() {
   sqfliteFfiInit();
@@ -1387,7 +1392,402 @@ Consulta [guía local](https://vault.local/guia).
         expect(selectedText, isNot(contains('H1')));
       },
     );
+
+    test(
+      'rotateScreenDeltaToDocument and isPointInsideAnyRect handle rotations and bounds cleanly',
+      () {
+        expect(
+          rotateScreenDeltaToDocument(const Offset(20, -40), zoom: 2.0, quarterTurns: 0),
+          const Offset(10, -20),
+        );
+        expect(
+          rotateScreenDeltaToDocument(const Offset(20, -40), zoom: 2.0, quarterTurns: 1),
+          const Offset(-20, -10),
+        );
+        expect(
+          rotateScreenDeltaToDocument(const Offset(20, -40), zoom: 2.0, quarterTurns: 2),
+          const Offset(-10, 20),
+        );
+        expect(
+          rotateScreenDeltaToDocument(const Offset(20, -40), zoom: 2.0, quarterTurns: 3),
+          const Offset(20, 10),
+        );
+
+        const pages = [
+          Rect.fromLTWH(20, 20, 400, 600),
+          Rect.fromLTWH(20, 640, 400, 600),
+        ];
+        expect(isPointInsideAnyRect(const Offset(100, 100), pages), isTrue);
+        expect(isPointInsideAnyRect(const Offset(10, 100), pages), isFalse);
+        expect(isPointInsideAnyRect(const Offset(100, 630), pages), isFalse);
+      },
+    );
+
+    testWidgets(
+      'VaultNotePane scrolls smoothly via outside-margin left-click drag and trackpad',
+      (tester) async {
+        final now = DateTime.now();
+        final longMd = List.generate(
+          60,
+          (i) => 'Párrafo de prueba número $i con suficiente contenido para hacer scroll.',
+        ).join('\n\n');
+        final item = VaultItem(
+          id: 'note-scroll-1',
+          parentId: null,
+          title: 'Apuntes largos',
+          type: VaultItemType.note,
+          contentMd: longMd,
+          updatedAt: now,
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              vaultItemsProvider.overrideWith(() => _FakeVaultItemsNotifier([item])),
+              examReadOnlyProvider.overrideWith(_FakeExamReadOnlyNotifier.new),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark,
+              home: Scaffold(
+                body: SizedBox(
+                  width: 800,
+                  height: 500,
+                  child: VaultNotePane(item: item),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final scrollable = tester.state<ScrollableState>(
+          find.descendant(
+            of: find.byType(VaultNotePane),
+            matching: find.byWidgetPredicate(
+              (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+            ),
+          ),
+        );
+        expect(scrollable.position.pixels, 0);
+
+        // Grab-scroll by holding left mouse button in the outer 32px left gutter (x = 12)
+        final gutterStart = const Offset(12, 320);
+        final drag = await tester.startGesture(
+          gutterStart,
+          kind: PointerDeviceKind.mouse,
+          buttons: kPrimaryMouseButton,
+        );
+        await tester.pump();
+        await drag.moveBy(const Offset(0, -140));
+        await tester.pump();
+        await drag.up();
+        await tester.pumpAndSettle();
+
+        expect(scrollable.position.pixels, greaterThan(100));
+        final afterGrab = scrollable.position.pixels;
+
+        // Trackpad 2-finger pan gesture scrolls further smoothly
+        await tester.trackpadFling(
+          find.byType(VaultNotePane),
+          const Offset(0, -200),
+          500,
+        );
+        await tester.pumpAndSettle();
+
+        expect(scrollable.position.pixels, greaterThan(afterGrab));
+      },
+    );
   });
+
+  group('Auto-Updater (GitHub Releases)', () {
+    test('kVaultStudyAppVersion stays synchronized with pubspec.yaml', () {
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      final match = RegExp(
+        r'^version:\s*([^\s+#]+)',
+        multiLine: true,
+      ).firstMatch(pubspec);
+      expect(match, isNotNull);
+      expect(kVaultStudyAppVersion, match!.group(1));
+    });
+
+    test('compareSemver & isNewerVersion handle v-prefixes, multi-digit and build suffixes', () {
+      expect(parseSemverParts('v1.0.4'), [1, 0, 4]);
+      expect(parseSemverParts('1.0.3+4'), [1, 0, 3]);
+      expect(isNewerVersion('1.0.3', 'v1.0.4'), isTrue);
+      expect(isNewerVersion('1.0.9', 'v1.0.10'), isTrue);
+      expect(isNewerVersion('1.0.3', 'v1.1.0'), isTrue);
+      expect(isNewerVersion('1.0.3', 'v1.0.3'), isFalse);
+      expect(isNewerVersion('1.0.4', 'v1.0.3'), isFalse);
+    });
+
+    test('parseGitHubReleaseJson extracts Windows ZIP and Android APK assets', () {
+      final release = parseGitHubReleaseJson({
+        'tag_name': 'v1.0.4',
+        'name': 'VaultStudy v1.0.4',
+        'body': '- Auto-actualizador integrado',
+        'html_url':
+            'https://github.com/AlejandroMayaMancha3/VaultStudy/releases/tag/v1.0.4',
+        'draft': false,
+        'assets': [
+          {
+            'name': 'app-release.apk',
+            'browser_download_url':
+                'https://example.com/v1.0.4/app-release.apk',
+            'size': 92418228,
+          },
+          {
+            'name': 'VaultStudy-Windows-x64.zip',
+            'browser_download_url':
+                'https://example.com/v1.0.4/VaultStudy-Windows-x64.zip',
+            'size': 19710322,
+          },
+        ],
+      });
+
+      expect(release, isNotNull);
+      expect(release!.tagName, 'v1.0.4');
+      expect(release.version, '1.0.4');
+      expect(release.windowsAsset?.name, 'VaultStudy-Windows-x64.zip');
+      expect(release.androidAsset?.name, 'app-release.apk');
+      expect(
+        release.preferredAssetForPlatform(isWindowsOverride: true)?.name,
+        'VaultStudy-Windows-x64.zip',
+      );
+      expect(
+        release.preferredAssetForPlatform(isWindowsOverride: false, isAndroidOverride: true)?.name,
+        'app-release.apk',
+      );
+    });
+
+    test('buildWindowsUpdaterPowerShellScript quotes spaces and single quotes safely', () {
+      final script = buildWindowsUpdaterPowerShellScript(
+        pid: 4242,
+        sourceDir: r"C:\Users\O'Connor\AppData\Local\Temp\upd\extracted",
+        targetDir: r'C:\Users\oa622\Desktop\2 escritorio\VaultStudy',
+        exePath: r'C:\Users\oa622\Desktop\2 escritorio\VaultStudy\vaultstudy.exe',
+        cleanupDir: r'C:\Users\oa622\AppData\Local\Temp\vaultstudy_updates',
+      );
+      expect(script, contains(r'$appPid = 4242'));
+      expect(script, contains("O''Connor"));
+      expect(script, contains('2 escritorio'));
+      expect(script, contains('Start-Process -FilePath \$exePath'));
+    });
+
+    testWidgets('showAppUpdateDialog displays available release details and action', (tester) async {
+      final fakeRelease = AppReleaseInfo(
+        tagName: 'v9.9.9',
+        version: '9.9.9',
+        title: 'VaultStudy v9.9.9',
+        notes: '- Prueba de actualización automática',
+        htmlUrl: 'https://github.com/AlejandroMayaMancha3/VaultStudy/releases/tag/v9.9.9',
+        windowsAsset: const AppReleaseAsset(
+          name: 'VaultStudy-Windows-x64.zip',
+          downloadUrl: 'https://example.com/VaultStudy-Windows-x64.zip',
+          sizeBytes: 20 * 1024 * 1024,
+        ),
+        androidAsset: const AppReleaseAsset(
+          name: 'app-release.apk',
+          downloadUrl: 'https://example.com/app-release.apk',
+          sizeBytes: 90 * 1024 * 1024,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appUpdateProvider.overrideWith(
+              () => _FakeAppUpdateNotifier(
+                AppUpdateState(
+                  status: AppUpdateStatus.available,
+                  currentVersion: '1.0.3',
+                  latestRelease: fakeRelease,
+                ),
+              ),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: Scaffold(
+              body: Consumer(
+                builder: (context, ref, _) => ElevatedButton(
+                  onPressed: () => showAppUpdateDialog(context, ref),
+                  child: const Text('Abrir Update'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Abrir Update'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nueva actualización disponible'), findsOneWidget);
+      expect(find.text('v1.0.3'), findsOneWidget);
+      expect(find.text('v9.9.9'), findsOneWidget);
+      expect(find.textContaining('Prueba de actualización automática'), findsOneWidget);
+    });
+  });
+
+  group('Anti-Accidental-Move Safety Lock', () {
+    test('structure lock defaults to true and persists toggle in SharedPreferences', () async {
+      SharedPreferences.setMockInitialValues({});
+      expect(await DatabaseHelper.instance.getStructureLockedMode(), isTrue);
+
+      await DatabaseHelper.instance.setStructureLockedMode(false);
+      expect(await DatabaseHelper.instance.getStructureLockedMode(), isFalse);
+
+      await DatabaseHelper.instance.setStructureLockedMode(true);
+      expect(await DatabaseHelper.instance.getStructureLockedMode(), isTrue);
+    });
+
+    testWidgets(
+      'VaultTreeSidebar disables drag-and-drop by default until unlocked and allows undo',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final folderA = VaultItem(
+          id: 'folder-a',
+          parentId: null,
+          title: 'Carpeta A',
+          type: VaultItemType.folder,
+          updatedAt: DateTime(2026),
+        );
+        final folderB = VaultItem(
+          id: 'folder-b',
+          parentId: null,
+          title: 'Carpeta B',
+          type: VaultItemType.folder,
+          updatedAt: DateTime(2026),
+        );
+        final noteInA = VaultItem(
+          id: 'note-1',
+          parentId: 'folder-a',
+          title: 'Apuntes importantes',
+          type: VaultItemType.note,
+          contentMd: 'Contenido',
+          updatedAt: DateTime(2026),
+        );
+
+        final fakeNotifier = _MoveTrackingVaultItemsNotifier([
+          folderA,
+          folderB,
+          noteInA,
+        ]);
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              vaultItemsProvider.overrideWith(() => fakeNotifier),
+              examReadOnlyProvider.overrideWith(_FakeExamReadOnlyNotifier.new),
+              structureLockedProvider.overrideWith(StructureLockedNotifier.new),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.dark,
+              home: const Scaffold(
+                body: Row(
+                  children: [
+                    VaultTreeSidebar(),
+                    Expanded(child: SizedBox()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Padlock starts locked
+        expect(find.byIcon(Icons.lock_rounded), findsOneWidget);
+
+        // Expand Carpeta A so noteInA is visible
+        await tester.tap(find.text('Carpeta A'));
+        await tester.pumpAndSettle();
+        expect(find.text('Apuntes importantes'), findsOneWidget);
+
+        // Attempt drag while locked -> must NOT move
+        await tester.drag(
+          find.text('Apuntes importantes'),
+          tester.getCenter(find.text('Carpeta B')) -
+              tester.getCenter(find.text('Apuntes importantes')),
+        );
+        await tester.pumpAndSettle();
+        expect(fakeNotifier.moves, isEmpty);
+
+        // Unlock padlock
+        await tester.tap(find.byIcon(Icons.lock_rounded));
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.lock_open_rounded), findsOneWidget);
+        expect(find.text('Modo reorganizar (arrastre activo)'), findsOneWidget);
+
+        // Drag note from Carpeta A onto Carpeta B -> moves and offers DESHACER
+        await tester.drag(
+          find.text('Apuntes importantes'),
+          tester.getCenter(find.text('Carpeta B')) -
+              tester.getCenter(find.text('Apuntes importantes')),
+        );
+        await tester.pumpAndSettle();
+        expect(fakeNotifier.moves, [('note-1', 'folder-b')]);
+        expect(find.text('DESHACER'), findsOneWidget);
+
+        // Tapping DESHACER reverts the move back to folder-a
+        await tester.tap(find.text('DESHACER'));
+        await tester.pumpAndSettle();
+        expect(fakeNotifier.moves.last, ('note-1', 'folder-a'));
+      },
+    );
+
+    test('formatOutlineLevelMarker & cleanOutlineDisplayTitle distinguish outline levels', () {
+      // Depth 0: normal numbers (1, 2, 3...)
+      expect(formatOutlineLevelMarker(0, 0), '1');
+      expect(formatOutlineLevelMarker(0, 1), '2');
+      expect(formatOutlineLevelMarker(0, 9), '10');
+
+      // Depth 1: lowercase letters (a, b, c... aa...)
+      expect(formatOutlineLevelMarker(1, 0), 'a');
+      expect(formatOutlineLevelMarker(1, 2), 'c');
+      expect(formatOutlineLevelMarker(1, 25), 'z');
+      expect(formatOutlineLevelMarker(1, 26), 'aa');
+
+      // Depth 2: lowercase Roman numerals (i, ii, iii, iv...)
+      expect(formatOutlineLevelMarker(2, 0), 'i');
+      expect(formatOutlineLevelMarker(2, 1), 'ii');
+      expect(formatOutlineLevelMarker(2, 3), 'iv');
+
+      // Depth 3+: subtle bullet
+      expect(formatOutlineLevelMarker(3, 0), '◦');
+
+      // Title cleanup removes duplicate bullet prefixes cleanly
+      expect(cleanOutlineDisplayTitle('• Almacenaje de datos'), 'Almacenaje de datos');
+      expect(cleanOutlineDisplayTitle('1. Introducción PHP'), '1. Introducción PHP');
+    });
+  });
+}
+
+class _MoveTrackingVaultItemsNotifier extends VaultItemsNotifier {
+  _MoveTrackingVaultItemsNotifier(this._items);
+  List<VaultItem> _items;
+  final List<(String, String?)> moves = [];
+
+  @override
+  Future<List<VaultItem>> build() async => _items;
+
+  @override
+  Future<void> moveItem(String id, String? newParentId) async {
+    moves.add((id, newParentId));
+    _items = [
+      for (final item in _items)
+        if (item.id == id) item.copyWith(parentId: newParentId) else item,
+    ];
+    state = AsyncData(_items);
+  }
+}
+
+class _FakeAppUpdateNotifier extends AppUpdateNotifier {
+  _FakeAppUpdateNotifier(this._initial);
+  final AppUpdateState _initial;
+
+  @override
+  AppUpdateState build() => _initial;
 }
 
 class _FakeVaultItemsNotifier extends VaultItemsNotifier {

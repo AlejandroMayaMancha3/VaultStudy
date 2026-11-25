@@ -52,7 +52,8 @@ class VaultPdfViewer extends ConsumerStatefulWidget {
   ConsumerState<VaultPdfViewer> createState() => VaultPdfViewerState();
 }
 
-class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
+class VaultPdfViewerState extends ConsumerState<VaultPdfViewer>
+    with SingleTickerProviderStateMixin {
   final PdfViewerController _controller = PdfViewerController();
   late PdfTextSearcher _textSearcher;
   final FocusNode _inDocSearchFocus = FocusNode();
@@ -95,8 +96,19 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   DateTime? _lastDragFinishedAt;
   Offset? _mouseDownGlobal;
   bool _didDragSelect = false;
+  bool _isMousePanningLeft = false;
   bool _isMousePanningMiddle = false;
+  bool _didMousePanMove = false;
+  bool _isDraggingScrollThumb = false;
+  bool _isTouchpadPanning = false;
   Offset? _lastPanGlobal;
+  Offset _panAccumulatedPos = Offset.zero;
+  VelocityTracker? _panVelocityTracker;
+  Ticker? _panInertiaTicker;
+  Offset _panVelocityPerSec = Offset.zero;
+  Duration? _lastInertiaElapsed;
+  final ValueNotifier<MouseCursor> _viewerCursorNotifier =
+      ValueNotifier<MouseCursor>(MouseCursor.defer);
   PdfTextSelectionPoint? _mouseSelectionAnchor;
   PdfTextSelectionPoint? _lastAppliedStart;
   PdfTextSelectionPoint? _lastAppliedEnd;
@@ -105,6 +117,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
 
   // Embedded PDF outline & persistent page bookmarks
   List<PdfOutlineNode> _outlineNodes = const [];
+  final Set<String> _expandedOutlinePaths = {};
   List<int> _bookmarkedPages = [];
   bool _showOutlineDrawer = false;
   int _outlineTab = 0; // 0 = PDF TOC, 1 = Bookmarks
@@ -131,6 +144,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
         if (mounted) setState(() {});
       });
     _controller.addListener(_onControllerChanged);
+    _panInertiaTicker = createTicker(_onInertiaTick);
     _resolveFile();
     _loadBookmarks();
   }
@@ -140,6 +154,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != widget.item.id ||
         oldWidget.item.filePath != widget.item.filePath) {
+      _stopPanInertia();
       _currentPage = widget.initialPage;
       _rotationTurns = 0;
       _activeSelection = null;
@@ -149,6 +164,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
       _pageCharBoundsCache.clear();
       _pendingTextLoads.clear();
       _outlineNodes = const [];
+      _expandedOutlinePaths.clear();
       _bookmarkedPages = [];
       _dragPageNumber = null;
       _dragPoints = [];
@@ -165,6 +181,8 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
 
   @override
   void dispose() {
+    _panInertiaTicker?.dispose();
+    _viewerCursorNotifier.dispose();
     _controller.removeListener(_onControllerChanged);
     _textSearcher.dispose();
     _inDocSearchController.dispose();
@@ -676,8 +694,93 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     });
   }
 
+  void _stopPanInertia() {
+    if (_panInertiaTicker?.isActive ?? false) {
+      _panInertiaTicker?.stop();
+    }
+    _panVelocityPerSec = Offset.zero;
+    _lastInertiaElapsed = null;
+  }
+
+  void _startPanInertia(Offset screenVelocityPerSec) {
+    final speed = screenVelocityPerSec.distance;
+    if (!mounted || !_controller.isReady || speed < 140.0) {
+      _stopPanInertia();
+      return;
+    }
+    const maxSpeed = 2800.0;
+    _panVelocityPerSec = speed > maxSpeed
+        ? screenVelocityPerSec * (maxSpeed / speed)
+        : screenVelocityPerSec;
+    _lastInertiaElapsed = null;
+    if (!(_panInertiaTicker?.isActive ?? false)) {
+      _panInertiaTicker?.start();
+    }
+  }
+
+  void _onInertiaTick(Duration elapsed) {
+    if (!mounted || !_controller.isReady) {
+      _stopPanInertia();
+      return;
+    }
+    final prev = _lastInertiaElapsed;
+    _lastInertiaElapsed = elapsed;
+    if (prev == null) return;
+
+    final dt = ((elapsed - prev).inMicroseconds / 1e6).clamp(0.0, 0.05);
+    if (dt <= 0) return;
+
+    _panByScreenDelta(_panVelocityPerSec * dt);
+    _panVelocityPerSec *= math.exp(-7.2 * dt);
+    if (_panVelocityPerSec.distance < 18.0) {
+      _stopPanInertia();
+    }
+  }
+
+  void _panByScreenDelta(Offset screenDelta) {
+    if (!_controller.isReady || screenDelta == Offset.zero) return;
+    final deltaDoc = rotateScreenDeltaToDocument(
+      screenDelta,
+      zoom: _controller.currentZoom,
+      quarterTurns: _rotationTurns,
+    );
+    final nextCenter = _controller.centerPosition - deltaDoc;
+    _controller.value = _controller.calcMatrixFor(nextCenter);
+  }
+
+  bool _isGlobalPosInsideAnyPage(Offset globalPos) {
+    if (!_controller.isReady) return true;
+    final docPos = _controller.globalToDocument(globalPos);
+    if (docPos == null) return false;
+    return isPointInsideAnyRect(docPos, _controller.layout.pageLayouts);
+  }
+
+  void _updateHoverCursor(Offset globalPos) {
+    if (_useTouchInput) return;
+    if (_isMousePanningLeft || _isMousePanningMiddle) {
+      if (_viewerCursorNotifier.value != SystemMouseCursors.grabbing) {
+        _viewerCursorNotifier.value = SystemMouseCursors.grabbing;
+      }
+      return;
+    }
+    if (_isDraggingScrollThumb) {
+      if (_viewerCursorNotifier.value != SystemMouseCursors.click) {
+        _viewerCursorNotifier.value = SystemMouseCursors.click;
+      }
+      return;
+    }
+    final insidePage = _isGlobalPosInsideAnyPage(globalPos);
+    final nextCursor =
+        insidePage ? MouseCursor.defer : SystemMouseCursors.grab;
+    if (_viewerCursorNotifier.value != nextCursor) {
+      _viewerCursorNotifier.value = nextCursor;
+    }
+  }
+
   void _handleViewerPointerDown(PointerDownEvent event) {
-    if (_toolMode != PdfMarkerTool.browse) return;
+    _stopPanInertia();
+    if (_isDraggingScrollThumb) return;
+
     if (event.kind == PointerDeviceKind.touch) {
       if (!_useTouchInput) {
         setState(() => _useTouchInput = true);
@@ -694,11 +797,31 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
 
     if ((event.buttons & kMiddleMouseButton) != 0) {
       _isMousePanningMiddle = true;
+      _didMousePanMove = false;
       _lastPanGlobal = event.position;
+      _panAccumulatedPos = Offset.zero;
+      _panVelocityTracker = VelocityTracker.withKind(PointerDeviceKind.mouse);
+      _viewerCursorNotifier.value = SystemMouseCursors.grabbing;
       return;
     }
 
     if ((event.buttons & kPrimaryMouseButton) != 0) {
+      // Holding left click outside any PDF page imitates touchpad/grab scrolling.
+      if (!_isGlobalPosInsideAnyPage(event.position)) {
+        _isMousePanningLeft = true;
+        _didMousePanMove = false;
+        _mouseDownGlobal = event.position;
+        _lastPanGlobal = event.position;
+        _didDragSelect = false;
+        _mouseSelectionAnchor = null;
+        _panAccumulatedPos = Offset.zero;
+        _panVelocityTracker =
+            VelocityTracker.withKind(PointerDeviceKind.mouse);
+        _viewerCursorNotifier.value = SystemMouseCursors.grabbing;
+        return;
+      }
+
+      if (_toolMode != PdfMarkerTool.browse) return;
       _mouseDownGlobal = event.position;
       _didDragSelect = false;
       _lastAppliedStart = null;
@@ -709,18 +832,22 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   }
 
   void _handleViewerPointerMove(PointerMoveEvent event) {
-    if (_isMousePanningMiddle && _controller.isReady) {
+    if ((_isMousePanningMiddle || _isMousePanningLeft) &&
+        _controller.isReady) {
       final prev = _lastPanGlobal;
       _lastPanGlobal = event.position;
       if (prev != null) {
-        final deltaDoc = (event.position - prev) / _controller.currentZoom;
-        final nextCenter = _controller.centerPosition - deltaDoc;
-        unawaited(
-          _controller.goTo(
-            _controller.calcMatrixFor(nextCenter),
-            duration: Duration.zero,
-          ),
-        );
+        final delta = event.position - prev;
+        if (delta != Offset.zero) {
+          if (!_didMousePanMove &&
+              _mouseDownGlobal != null &&
+              (event.position - _mouseDownGlobal!).distance >= 3.0) {
+            _didMousePanMove = true;
+          }
+          _panByScreenDelta(delta);
+          _panAccumulatedPos += delta;
+          _panVelocityTracker?.addPosition(event.timeStamp, _panAccumulatedPos);
+        }
       }
       return;
     }
@@ -740,8 +867,24 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
   }
 
   void _handleViewerPointerUpOrCancel(PointerEvent event) {
-    _isMousePanningMiddle = false;
-    _lastPanGlobal = null;
+    if (_isMousePanningMiddle || _isMousePanningLeft) {
+      final didMove = _didMousePanMove;
+      final velocity =
+          _panVelocityTracker?.getVelocity().pixelsPerSecond ?? Offset.zero;
+      _isMousePanningMiddle = false;
+      _isMousePanningLeft = false;
+      _didMousePanMove = false;
+      _lastPanGlobal = null;
+      _mouseDownGlobal = null;
+      _panVelocityTracker = null;
+      _updateHoverCursor(event.position);
+      if (didMove) {
+        _lastDragFinishedAt = DateTime.now();
+        _startPanInertia(velocity);
+      }
+      return;
+    }
+    _isDraggingScrollThumb = false;
     if (_didDragSelect) {
       _flushDragSelectionAt(event.position);
       final hasSel = _lastAppliedStart != null && _lastAppliedEnd != null;
@@ -756,9 +899,54 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     _mouseDownGlobal = null;
   }
 
+  void _handleViewerPointerPanZoomStart(PointerPanZoomStartEvent event) {
+    _stopPanInertia();
+    _floatingMenuAnchor.value = null;
+    _mouseDownGlobal = null;
+    _didDragSelect = false;
+    _isTouchpadPanning = false;
+    _panAccumulatedPos = Offset.zero;
+    _panVelocityTracker = VelocityTracker.withKind(PointerDeviceKind.trackpad);
+  }
+
+  void _handleViewerPointerPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    if (!_controller.isReady) return;
+    // Let InteractiveViewer handle 2-finger pinch-zoom natively.
+    if ((event.scale - 1.0).abs() >= 0.02) {
+      _isTouchpadPanning = false;
+      return;
+    }
+    if (_useTouchInput) return;
+    _isTouchpadPanning = true;
+    if (event.panDelta != Offset.zero) {
+      _panByScreenDelta(event.panDelta);
+      _panAccumulatedPos += event.panDelta;
+      _panVelocityTracker?.addPosition(event.timeStamp, _panAccumulatedPos);
+    }
+  }
+
+  void _handleViewerPointerPanZoomEnd(PointerPanZoomEndEvent event) {
+    if (_isTouchpadPanning) {
+      _isTouchpadPanning = false;
+      final vel =
+          _panVelocityTracker?.getVelocity().pixelsPerSecond ?? Offset.zero;
+      _startPanInertia(vel);
+    }
+    _panVelocityTracker = null;
+  }
+
   void _handleViewerPointerSignal(PointerSignalEvent event) {
-    if (event is PointerScrollEvent && _floatingMenuAnchor.value != null) {
-      _floatingMenuAnchor.value = null;
+    if (event is PointerScrollEvent) {
+      if (_floatingMenuAnchor.value != null) {
+        _floatingMenuAnchor.value = null;
+      }
+      if (!_useTouchInput &&
+          event.kind == PointerDeviceKind.trackpad &&
+          _controller.isReady &&
+          !HardwareKeyboard.instance.isControlPressed) {
+        _stopPanInertia();
+        _panByScreenDelta(-event.scrollDelta);
+      }
     }
   }
 
@@ -1727,37 +1915,101 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                       ),
                     )
                   else
-                    Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: _handleViewerPointerDown,
-                      onPointerMove: _handleViewerPointerMove,
-                      onPointerUp: _handleViewerPointerUpOrCancel,
-                      onPointerCancel: _handleViewerPointerUpOrCancel,
-                      onPointerSignal: _handleViewerPointerSignal,
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          bottom: widget.showBottomCapsule ? 64 : 0,
-                        ),
-                        child: RotatedBox(
-                          quarterTurns: _rotationTurns,
-                          child: PdfViewer.file(
-                            _resolvedPath!,
-                            controller: _controller,
-                            initialPageNumber: widget.initialPage,
-                            params: PdfViewerParams(
-                              backgroundColor: AppColors.surfaceLowest,
-                              margin: 16,
-                              scrollByMouseWheel: 0.25,
-                              panEnabled: _useTouchInput,
-                              scaleEnabled: true,
-                              enableKeyboardNavigation: true,
-                              sizeDelegateProvider:
-                                  const PdfViewerSizeDelegateProviderLegacy(
-                                minScale: 0.25,
-                                maxScale: 5.0,
-                                useAlternativeFitScaleAsMinScale: false,
-                              ),
-                              pagePaintCallbacks: [
+                    ValueListenableBuilder<MouseCursor>(
+                      valueListenable: _viewerCursorNotifier,
+                      builder: (_, cursor, child) => MouseRegion(
+                        cursor: cursor,
+                        onHover: (e) => _updateHoverCursor(e.position),
+                        child: child,
+                      ),
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: _handleViewerPointerDown,
+                        onPointerMove: _handleViewerPointerMove,
+                        onPointerUp: _handleViewerPointerUpOrCancel,
+                        onPointerCancel: _handleViewerPointerUpOrCancel,
+                        onPointerPanZoomStart: _handleViewerPointerPanZoomStart,
+                        onPointerPanZoomUpdate:
+                            _handleViewerPointerPanZoomUpdate,
+                        onPointerPanZoomEnd: _handleViewerPointerPanZoomEnd,
+                        onPointerSignal: _handleViewerPointerSignal,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            bottom: widget.showBottomCapsule ? 64 : 0,
+                          ),
+                          child: RotatedBox(
+                            quarterTurns: _rotationTurns,
+                            child: PdfViewer.file(
+                              _resolvedPath!,
+                              controller: _controller,
+                              initialPageNumber: widget.initialPage,
+                              params: PdfViewerParams(
+                                backgroundColor: AppColors.surfaceLowest,
+                                margin: 22,
+                                scrollByMouseWheel: 0.55,
+                                panEnabled: _useTouchInput,
+                                scaleEnabled: true,
+                                enableKeyboardNavigation: true,
+                                sizeDelegateProvider:
+                                    const PdfViewerSizeDelegateProviderLegacy(
+                                  minScale: 0.25,
+                                  maxScale: 5.0,
+                                  useAlternativeFitScaleAsMinScale: false,
+                                ),
+                                viewerOverlayBuilder:
+                                    (context, size, handleLinkTap) => [
+                                  PdfViewerScrollThumb(
+                                    controller: _controller,
+                                    orientation: ScrollbarOrientation.right,
+                                    margin: 4,
+                                    thumbSize: const Size(26, 36),
+                                    thumbBuilder: (ctx, thumbSize, pageNumber,
+                                            controller) =>
+                                        Listener(
+                                      behavior: HitTestBehavior.opaque,
+                                      onPointerDown: (_) {
+                                        _isDraggingScrollThumb = true;
+                                        _viewerCursorNotifier.value =
+                                            SystemMouseCursors.click;
+                                      },
+                                      onPointerUp: (_) =>
+                                          _isDraggingScrollThumb = false,
+                                      onPointerCancel: (_) =>
+                                          _isDraggingScrollThumb = false,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surfaceHigh
+                                              .withValues(alpha: 0.92),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: AppColors.outlineVariant
+                                                .withValues(alpha: 0.7),
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Colors.black45,
+                                              blurRadius: 6,
+                                              offset: Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          pageNumber != null
+                                              ? '$pageNumber'
+                                              : '',
+                                          style: AppTypography.badgeMono
+                                              .copyWith(
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                pagePaintCallbacks: [
                                 _textSearcher.pageTextMatchPaintCallback,
                               ],
                               customizeContextMenuItems: (params, items) {
@@ -2098,6 +2350,7 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
                       ),
                     ),
                   ),
+                ),
                   // Minimalist floating capsule controls (Bottom Centered)
                   if (widget.showBottomCapsule &&
                       !_loadingPath &&
@@ -2654,6 +2907,64 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
             ),
           ),
           const Divider(height: 1),
+          if (_outlineTab == 0 && _outlineNodes.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              color: AppColors.surfaceLowest.withValues(alpha: 0.65),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${_outlineNodes.length} temas',
+                      style: AppTypography.badgeMono.copyWith(
+                        color: AppColors.outline,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(5),
+                    onTap: () {
+                      setState(() {
+                        if (_expandedOutlinePaths.isEmpty) {
+                          _expandedOutlinePaths.addAll(
+                            _collectExpandableOutlinePaths(_outlineNodes),
+                          );
+                        } else {
+                          _expandedOutlinePaths.clear();
+                        }
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _expandedOutlinePaths.isEmpty
+                                ? Icons.unfold_more_rounded
+                                : Icons.unfold_less_rounded,
+                            size: 14,
+                            color: AppColors.secondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _expandedOutlinePaths.isEmpty
+                                ? 'Expandir todo'
+                                : 'Contraer todo',
+                            style: AppTypography.badgeMono.copyWith(
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: _outlineTab == 0
                 ? _outlineNodes.isEmpty
@@ -2764,71 +3075,197 @@ class VaultPdfViewerState extends ConsumerState<VaultPdfViewer> {
     );
   }
 
+  Iterable<String> _collectExpandableOutlinePaths(
+    List<PdfOutlineNode> nodes, [
+    String pathPrefix = '',
+  ]) sync* {
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
+      if (node.children.isEmpty) continue;
+      final pathKey = pathPrefix.isEmpty ? '$i' : '$pathPrefix/$i';
+      yield pathKey;
+      yield* _collectExpandableOutlinePaths(node.children, pathKey);
+    }
+  }
+
   List<Widget> _buildOutlineNodesWidgets(
     List<PdfOutlineNode> nodes,
-    int depth,
-  ) {
+    int depth, [
+    String pathPrefix = '',
+  ]) {
     final widgets = <Widget>[];
-    for (final node in nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
+      final pathKey = pathPrefix.isEmpty ? '$i' : '$pathPrefix/$i';
+      final hasChildren = node.children.isNotEmpty;
+      final isExpanded = _expandedOutlinePaths.contains(pathKey);
+      final marker = formatOutlineLevelMarker(depth, i);
+      final displayTitle = cleanOutlineDisplayTitle(node.title);
+      final pageNumber = node.dest?.pageNumber;
+
+      final Color markerTextColor;
+      final Color markerBgColor;
+      final Color markerBorderColor;
+      switch (depth) {
+        case <= 0:
+          markerTextColor = AppColors.onSurface;
+          markerBgColor = AppColors.surfaceHighest;
+          markerBorderColor = AppColors.outlineVariant.withValues(alpha: 0.7);
+        case 1:
+          markerTextColor = AppColors.secondary;
+          markerBgColor = AppColors.secondary.withValues(alpha: 0.14);
+          markerBorderColor = AppColors.secondary.withValues(alpha: 0.35);
+        case 2:
+          markerTextColor = AppColors.bookAmber;
+          markerBgColor = AppColors.bookAmber.withValues(alpha: 0.14);
+          markerBorderColor = AppColors.bookAmber.withValues(alpha: 0.35);
+        default:
+          markerTextColor = AppColors.outline;
+          markerBgColor = Colors.transparent;
+          markerBorderColor = Colors.transparent;
+      }
+
       widgets.add(
-        InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: node.dest == null
-              ? null
-              : () {
-                  if (_controller.isReady) {
-                    _controller.goToDest(node.dest);
+        Container(
+          margin: EdgeInsets.only(
+            top: depth == 0 && i > 0 ? 4 : 1,
+            bottom: 1,
+            left: depth.clamp(0, 4) * 10.0,
+          ),
+          decoration: BoxDecoration(
+            color: depth == 0
+                ? AppColors.surfaceContainer.withValues(alpha: 0.55)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: depth > 0
+                ? Border(
+                    left: BorderSide(
+                      color: AppColors.outlineVariant.withValues(alpha: 0.45),
+                      width: 1.2,
+                    ),
+                  )
+                : null,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () {
+              if (node.dest != null && _controller.isReady) {
+                _controller.goToDest(node.dest);
+              } else if (hasChildren) {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedOutlinePaths.remove(pathKey);
+                  } else {
+                    _expandedOutlinePaths.add(pathKey);
                   }
-                },
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              8.0 + (depth.clamp(0, 4) * 10.0),
-              6,
-              8,
-              6,
-            ),
-            child: Row(
-              children: [
-                if (node.dest?.pageNumber != null)
+                });
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 5, 6, 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasChildren)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () {
+                        setState(() {
+                          if (isExpanded) {
+                            _expandedOutlinePaths.remove(pathKey);
+                          } else {
+                            _expandedOutlinePaths.add(pathKey);
+                          }
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
+                        child: Icon(
+                          isExpanded
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.keyboard_arrow_right_rounded,
+                          size: 16,
+                          color: depth == 0
+                              ? AppColors.onSurface
+                              : AppColors.secondary,
+                        ),
+                      ),
+                    )
+                  else
+                    const SizedBox(width: 20),
                   Container(
-                    margin: const EdgeInsets.only(right: 6),
+                    margin: const EdgeInsets.only(top: 1, right: 7),
+                    constraints: const BoxConstraints(minWidth: 19),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 5,
                       vertical: 1,
                     ),
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AppColors.surfaceContainer,
+                      color: markerBgColor,
                       borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: markerBorderColor, width: 0.8),
                     ),
                     child: Text(
-                      '${node.dest!.pageNumber}',
+                      marker,
                       style: AppTypography.badgeMono.copyWith(
-                        fontSize: 9.5,
-                        color: AppColors.primary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: markerTextColor,
                       ),
                     ),
                   ),
-                Expanded(
-                  child: Text(
-                    node.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.bodyMd.copyWith(
-                      fontSize: depth == 0 ? 12.5 : 12,
-                      fontWeight: depth == 0 ? FontWeight.w600 : FontWeight.w400,
-                      color: depth == 0
-                          ? AppColors.onSurface
-                          : AppColors.onSurfaceVariant,
+                  Expanded(
+                    child: Tooltip(
+                      message: displayTitle,
+                      waitDuration: const Duration(milliseconds: 500),
+                      child: Text(
+                        displayTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.bodyMd.copyWith(
+                          fontSize: depth == 0 ? 12.5 : 11.8,
+                          fontWeight:
+                              depth == 0 ? FontWeight.w600 : FontWeight.w400,
+                          color: depth == 0
+                              ? AppColors.onSurface
+                              : (depth == 1
+                                  ? AppColors.onSurface.withValues(alpha: 0.88)
+                                  : AppColors.onSurfaceVariant),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                  if (pageNumber != null)
+                    Container(
+                      margin: const EdgeInsets.only(left: 6, top: 1),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLowest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '$pageNumber',
+                        style: AppTypography.badgeMono.copyWith(
+                          fontSize: 9.5,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
       );
-      if (node.children.isNotEmpty) {
-        widgets.addAll(_buildOutlineNodesWidgets(node.children, depth + 1));
+
+      if (hasChildren && isExpanded) {
+        widgets.addAll(
+          _buildOutlineNodesWidgets(node.children, depth + 1, pathKey),
+        );
       }
     }
     return widgets;

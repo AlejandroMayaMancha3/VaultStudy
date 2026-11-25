@@ -8,6 +8,8 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/type_badge.dart';
 import '../../../core/widgets/vault_logo.dart';
+import '../../app_update/application/app_update_service.dart';
+import '../../app_update/presentation/app_update_dialog.dart';
 import '../../cloud_sync/application/cloud_sync_service.dart';
 import '../../global_search/presentation/super_search_dialog.dart';
 import '../../vault_tree/application/vault_providers.dart';
@@ -450,6 +452,56 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           'Baúl de Estudio Offline',
           style: AppTypography.bodySm,
         ),
+        Builder(
+          builder: (context) {
+            final updateState = ref.watch(appUpdateProvider);
+            if (!updateState.shouldShowBanner ||
+                updateState.latestRelease == null) {
+              return const SizedBox.shrink();
+            }
+            final rel = updateState.latestRelease!;
+            return Container(
+              margin: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppBreakpoints.radiusMd),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.system_update_alt_rounded,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Nueva versión ${rel.tagName} disponible',
+                      style: AppTypography.bodySm.copyWith(
+                        color: AppColors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => showAppUpdateDialog(context, ref),
+                    child: const Text('Actualizar'),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close_rounded, size: 16),
+                    onPressed: () =>
+                        ref.read(appUpdateProvider.notifier).dismissBanner(),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 12),
         // Search Input + Global Super-Search trigger
         Container(
@@ -763,6 +815,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
 
   Widget _buildSettingsTab() {
     final readOnlyExam = ref.watch(examReadOnlyProvider).value ?? false;
+    final structureLocked = ref.watch(structureLockedProvider).value ?? true;
     final sync = ref.watch(cloudSyncProvider);
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -812,6 +865,17 @@ class _MobileShellState extends ConsumerState<MobileShell> {
               ),
               const Divider(height: 1),
               SwitchListTile(
+                value: structureLocked,
+                activeThumbColor: AppColors.bookAmber,
+                title: const Text('Seguro anti-movimientos'),
+                subtitle: const Text(
+                  'Bloquea mover carpetas y archivos de sitio por accidente.',
+                ),
+                onChanged: (v) =>
+                    ref.read(structureLockedProvider.notifier).setLocked(v),
+              ),
+              const Divider(height: 1),
+              SwitchListTile(
                 value: readOnlyExam,
                 activeThumbColor: AppColors.primary,
                 title: const Text('Modo Solo Lectura de Examen'),
@@ -820,6 +884,28 @@ class _MobileShellState extends ConsumerState<MobileShell> {
                 ),
                 onChanged: (v) =>
                     ref.read(examReadOnlyProvider.notifier).setEnabled(v),
+              ),
+              const Divider(height: 1),
+              Builder(
+                builder: (context) {
+                  final upd = ref.watch(appUpdateProvider);
+                  return ListTile(
+                    leading: Icon(
+                      Icons.system_update_alt_rounded,
+                      color: upd.hasUpdate
+                          ? AppColors.primary
+                          : AppColors.secondary,
+                    ),
+                    title: const Text('Actualizaciones de la app'),
+                    subtitle: Text(
+                      upd.hasUpdate && upd.latestRelease != null
+                          ? 'Nueva versión ${upd.latestRelease!.tagName} disponible'
+                          : 'Versión instalada: v${upd.currentVersion}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => showAppUpdateDialog(context, ref),
+                  );
+                },
               ),
             ],
           ),

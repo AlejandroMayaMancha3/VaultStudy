@@ -94,6 +94,7 @@ class _VaultTreeSidebarState extends ConsumerState<VaultTreeSidebar> {
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(vaultItemsProvider);
     final pinnedItems = ref.watch(pinnedItemsProvider);
+    final structureLocked = ref.watch(structureLockedProvider).value ?? true;
     final ws = ref.watch(workspaceProvider);
     final wsNotifier = ref.read(workspaceProvider.notifier);
 
@@ -124,12 +125,33 @@ class _VaultTreeSidebarState extends ConsumerState<VaultTreeSidebar> {
                 Expanded(
                   child: Text(
                     'ÁRBOL DE BÓVEDA',
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelMono.copyWith(
                       color: AppColors.outline,
                       fontSize: 10.5,
                     ),
                   ),
+                ),
+                _HeaderIconButton(
+                  icon: structureLocked
+                      ? Icons.lock_rounded
+                      : Icons.lock_open_rounded,
+                  tooltip: structureLocked
+                      ? 'Seguro activo: evita mover archivos por accidente (clic para desbloquear)'
+                      : 'Seguro desactivado: puedes arrastrar archivos (clic para bloquear)',
+                  accentColor: structureLocked
+                      ? AppColors.bookAmber
+                      : AppColors.primary,
+                  onTap: () {
+                    final nextLocked = !structureLocked;
+                    if (nextLocked && _isDraggingInternal) {
+                      setState(() => _isDraggingInternal = false);
+                    }
+                    ref
+                        .read(structureLockedProvider.notifier)
+                        .setLocked(nextLocked);
+                  },
                 ),
                 _HeaderIconButton(
                   icon: Icons.create_new_folder_outlined,
@@ -156,6 +178,60 @@ class _VaultTreeSidebarState extends ConsumerState<VaultTreeSidebar> {
               ],
             ),
           ),
+          if (!structureLocked)
+            Container(
+              margin: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.open_with_rounded,
+                    size: 13,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Modo reorganizar (arrastre activo)',
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.badgeMono.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => ref
+                        .read(structureLockedProvider.notifier)
+                        .setLocked(true),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceHighest,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Bloquear',
+                        style: AppTypography.badgeMono.copyWith(
+                          color: AppColors.bookAmber,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Live tree search filter
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
@@ -316,14 +392,19 @@ class _VaultTreeSidebarState extends ConsumerState<VaultTreeSidebar> {
 
                       return Column(
                         children: [
-                          if (_isDraggingInternal)
+                          if (!structureLocked && _isDraggingInternal)
                             DragTarget<VaultItem>(
                               onWillAcceptWithDetails: (d) =>
+                                  !structureLocked &&
                                   _canDropInternalItem(items, d.data, null),
                               onAcceptWithDetails: (d) async {
-                                await ref
-                                    .read(vaultItemsProvider.notifier)
-                                    .moveItem(d.data.id, null);
+                                await VaultDialogs.moveItemWithUndoSnackBar(
+                                  context,
+                                  ref,
+                                  item: d.data,
+                                  targetParentId: null,
+                                  allItems: items,
+                                );
                               },
                               builder: (ctx, candidates, _) {
                                 final active = candidates.isNotEmpty;
@@ -462,11 +543,13 @@ class _VaultTreeSidebarState extends ConsumerState<VaultTreeSidebar> {
                                       hoveredExternalFolderId:
                                           _hoveredExternalFolderId,
                                       canDropInternal: (dragged, targetId) =>
+                                          !structureLocked &&
                                           _canDropInternalItem(
-                                        items,
-                                        dragged,
-                                        targetId,
-                                      ),
+                                            items,
+                                            dragged,
+                                            targetId,
+                                          ),
+                                      structureLocked: structureLocked,
                                       onInternalDragChanged: (dragging) {
                                         if (_isDraggingInternal != dragging &&
                                             mounted) {
@@ -800,13 +883,16 @@ class _HeaderIconButton extends StatelessWidget {
     return IconButton(
       tooltip: tooltip,
       onPressed: onTap,
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: const Size(26, 26),
+        padding: const EdgeInsets.all(4),
+      ),
       icon: Icon(
         icon,
         size: 16.5,
         color: accentColor ?? AppColors.onSurfaceVariant,
       ),
-      padding: const EdgeInsets.all(3),
-      constraints: const BoxConstraints(minWidth: 25, minHeight: 26),
     );
   }
 }
@@ -822,6 +908,7 @@ class _TreeNodeTile extends ConsumerWidget {
     required this.keyForFolder,
     required this.hoveredExternalFolderId,
     required this.canDropInternal,
+    required this.structureLocked,
     required this.onInternalDragChanged,
   });
 
@@ -834,6 +921,7 @@ class _TreeNodeTile extends ConsumerWidget {
   final GlobalKey Function(String folderId) keyForFolder;
   final String? hoveredExternalFolderId;
   final bool Function(VaultItem dragged, String? targetId) canDropInternal;
+  final bool structureLocked;
   final ValueChanged<bool> onInternalDragChanged;
 
   @override
@@ -957,14 +1045,18 @@ class _TreeNodeTile extends ConsumerWidget {
       );
     }
 
-    final Widget wrappedTarget = isFolder
+    final Widget wrappedTarget = isFolder && !structureLocked
         ? DragTarget<VaultItem>(
             onWillAcceptWithDetails: (details) =>
-                canDropInternal(details.data, item.id),
+                !structureLocked && canDropInternal(details.data, item.id),
             onAcceptWithDetails: (details) async {
-              await ref
-                  .read(vaultItemsProvider.notifier)
-                  .moveItem(details.data.id, item.id);
+              await VaultDialogs.moveItemWithUndoSnackBar(
+                context,
+                ref,
+                item: details.data,
+                targetParentId: item.id,
+                allItems: allItems,
+              );
               wsNotifier.expandFolder(item.id);
             },
             builder: (ctx, candidateData, _) => buildTileContent(
@@ -975,6 +1067,7 @@ class _TreeNodeTile extends ConsumerWidget {
 
     final Widget draggableTile = Draggable<VaultItem>(
       data: item,
+      maxSimultaneousDrags: structureLocked ? 0 : 1,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       onDragStarted: () => onInternalDragChanged(true),
       onDragEnd: (_) => onInternalDragChanged(false),
@@ -1050,6 +1143,7 @@ class _TreeNodeTile extends ConsumerWidget {
                     keyForFolder: keyForFolder,
                     hoveredExternalFolderId: hoveredExternalFolderId,
                     canDropInternal: canDropInternal,
+                    structureLocked: structureLocked,
                     onInternalDragChanged: onInternalDragChanged,
                   ),
               ],
@@ -1116,9 +1210,22 @@ class _TreeNodeTile extends ConsumerWidget {
           const PopupMenuDivider(),
         ],
         const PopupMenuItem(value: 'rename', child: Text('Renombrar')),
-        const PopupMenuItem(value: 'move', child: Text('Mover a...')),
-        const PopupMenuItem(value: 'up', child: Text('Subir orden')),
-        const PopupMenuItem(value: 'down', child: Text('Bajar orden')),
+        PopupMenuItem(
+          value: 'move',
+          child: Text(
+            structureLocked ? 'Mover a... (bloqueado)' : 'Mover a...',
+          ),
+        ),
+        PopupMenuItem(
+          value: 'up',
+          enabled: !structureLocked,
+          child: const Text('Subir orden'),
+        ),
+        PopupMenuItem(
+          value: 'down',
+          enabled: !structureLocked,
+          child: const Text('Bajar orden'),
+        ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'delete',

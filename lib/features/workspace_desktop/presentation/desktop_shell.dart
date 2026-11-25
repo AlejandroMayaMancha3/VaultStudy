@@ -8,6 +8,8 @@ import 'package:vaultstudy/core/theme/app_colors.dart';
 import 'package:vaultstudy/core/theme/app_typography.dart';
 import 'package:vaultstudy/core/widgets/type_badge.dart';
 import 'package:vaultstudy/core/widgets/vault_logo.dart';
+import 'package:vaultstudy/features/app_update/application/app_update_service.dart';
+import 'package:vaultstudy/features/app_update/presentation/app_update_dialog.dart';
 import 'package:vaultstudy/features/cloud_sync/application/cloud_sync_service.dart';
 import 'package:vaultstudy/features/global_search/presentation/super_search_dialog.dart';
 import 'package:vaultstudy/features/notes_editor/presentation/vault_note_pane.dart';
@@ -416,6 +418,7 @@ class _DesktopHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(cloudSyncProvider);
+    final updateState = ref.watch(appUpdateProvider);
     final Color statusColor;
     final String statusText;
     if (sync.isSyncing) {
@@ -483,6 +486,45 @@ class _DesktopHeader extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 12),
+          if (updateState.shouldShowBanner &&
+              updateState.latestRelease != null) ...[
+            InkWell(
+              onTap: () => showAppUpdateDialog(context, ref),
+              borderRadius: BorderRadius.circular(AppBreakpoints.radiusSm),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(AppBreakpoints.radiusSm),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.55),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.system_update_alt_rounded,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Actualizar ${updateState.latestRelease!.tagName}',
+                      style: AppTypography.badgeMono.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
           // Exam / Cloud Offline Badge
           InkWell(
             onTap: sync.isSignedIn && !sync.isSyncing

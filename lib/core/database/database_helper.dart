@@ -14,6 +14,7 @@ class DatabaseHelper {
 
   static const String _prefVaultDirKey = 'vault_custom_dir';
   static const String _prefReadOnlyExamKey = 'vault_exam_read_only';
+  static const String _prefStructureLockedKey = 'vault_structure_locked';
   static const String _prefSkipSeedKey = 'vault_skip_seed_after_signout';
   static const String dbFileName = 'vault_study.db';
   static const String vaultFilesFolderName = 'vault_files';
@@ -115,6 +116,16 @@ class DatabaseHelper {
   Future<void> setExamReadOnlyMode(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_prefReadOnlyExamKey, value);
+  }
+
+  Future<bool> getStructureLockedMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_prefStructureLockedKey) ?? true;
+  }
+
+  Future<void> setStructureLockedMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_prefStructureLockedKey, value);
   }
 
   Future<bool> getSkipSeedAfterSignOut() async {

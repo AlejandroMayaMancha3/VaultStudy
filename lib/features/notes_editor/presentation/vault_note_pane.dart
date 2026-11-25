@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,9 +40,15 @@ class VaultNotePane extends ConsumerStatefulWidget {
   ConsumerState<VaultNotePane> createState() => VaultNotePaneState();
 }
 
-class VaultNotePaneState extends ConsumerState<VaultNotePane> {
+class VaultNotePaneState extends ConsumerState<VaultNotePane>
+    with SingleTickerProviderStateMixin {
   late TextEditingController _titleController;
   late TextEditingController _contentController;
+  final ScrollController _readerScrollController = ScrollController();
+  final GlobalKey _noteHeaderKey = GlobalKey();
+  final GlobalKey _noteContentKey = GlobalKey();
+  final ValueNotifier<MouseCursor> _readerCursorNotifier =
+      ValueNotifier<MouseCursor>(MouseCursor.defer);
   NoteViewMode _mode = NoteViewMode.read;
   Timer? _saveDebounce;
   bool _saving = false;
@@ -48,11 +57,20 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
   Map<int, GlobalKey> _headingKeys = {};
   final ValueNotifier<String> _selectedReaderText = ValueNotifier<String>('');
 
+  bool _isNoteGrabScrolling = false;
+  Offset? _lastNoteGrabGlobal;
+  Offset _noteGrabAccumulated = Offset.zero;
+  VelocityTracker? _noteVelocityTracker;
+  Ticker? _noteInertiaTicker;
+  double _noteVelocityY = 0;
+  Duration? _noteLastInertiaElapsed;
+
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.item.title);
     _contentController = TextEditingController(text: widget.item.contentMd);
+    _noteInertiaTicker = createTicker(_onNoteInertiaTick);
   }
 
   /// Cycles Read -> Split -> Edit -> Read (triggered by Ctrl+E shortcut).
@@ -77,10 +95,14 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != widget.item.id) {
       _saveDebounce?.cancel();
+      _stopNoteInertia();
       _titleController.text = widget.item.title;
       _contentController.text = widget.item.contentMd;
       _headingKeys = {};
       _selectedReaderText.value = '';
+      if (_readerScrollController.hasClients) {
+        _readerScrollController.jumpTo(0);
+      }
     } else if (oldWidget.item.contentMd != widget.item.contentMd &&
         widget.item.contentMd != _contentController.text) {
       _contentController.text = widget.item.contentMd;
@@ -90,10 +112,119 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
   @override
   void dispose() {
     _saveDebounce?.cancel();
+    _noteInertiaTicker?.dispose();
+    _readerScrollController.dispose();
+    _readerCursorNotifier.dispose();
     _selectedReaderText.dispose();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
+  }
+
+  void _stopNoteInertia() {
+    if (_noteInertiaTicker?.isActive ?? false) {
+      _noteInertiaTicker?.stop();
+    }
+    _noteVelocityY = 0;
+    _noteLastInertiaElapsed = null;
+  }
+
+  void _scrollNoteByDeltaY(double deltaScreenY) {
+    if (!_readerScrollController.hasClients || deltaScreenY == 0) return;
+    final pos = _readerScrollController.position;
+    final nextOffset = (pos.pixels - deltaScreenY)
+        .clamp(pos.minScrollExtent, pos.maxScrollExtent);
+    if (nextOffset != pos.pixels) {
+      _readerScrollController.jumpTo(nextOffset);
+    }
+  }
+
+  void _onNoteInertiaTick(Duration elapsed) {
+    if (!mounted || !_readerScrollController.hasClients) {
+      _stopNoteInertia();
+      return;
+    }
+    final prev = _noteLastInertiaElapsed;
+    _noteLastInertiaElapsed = elapsed;
+    if (prev == null) return;
+    final dt = ((elapsed - prev).inMicroseconds / 1e6).clamp(0.0, 0.05);
+    if (dt <= 0) return;
+    _scrollNoteByDeltaY(_noteVelocityY * dt);
+    _noteVelocityY *= math.exp(-7.2 * dt);
+    if (_noteVelocityY.abs() < 18.0) {
+      _stopNoteInertia();
+    }
+  }
+
+  bool _isGlobalPosInsideBox(GlobalKey key, Offset globalPos) {
+    final box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    final topLeft = box.localToGlobal(Offset.zero);
+    return (topLeft & box.size).contains(globalPos);
+  }
+
+  bool _isGlobalPosInsideNoteContent(Offset globalPos) {
+    return _isGlobalPosInsideBox(_noteHeaderKey, globalPos) ||
+        _isGlobalPosInsideBox(_noteContentKey, globalPos);
+  }
+
+  void _updateNoteHoverCursor(Offset globalPos) {
+    if (_isNoteGrabScrolling) {
+      if (_readerCursorNotifier.value != SystemMouseCursors.grabbing) {
+        _readerCursorNotifier.value = SystemMouseCursors.grabbing;
+      }
+      return;
+    }
+    final next = _isGlobalPosInsideNoteContent(globalPos)
+        ? MouseCursor.defer
+        : SystemMouseCursors.grab;
+    if (_readerCursorNotifier.value != next) {
+      _readerCursorNotifier.value = next;
+    }
+  }
+
+  void _handleNotePointerDown(PointerDownEvent event) {
+    _stopNoteInertia();
+    if (event.kind != PointerDeviceKind.mouse) return;
+    if ((event.buttons & kMiddleMouseButton) != 0 ||
+        ((event.buttons & kPrimaryMouseButton) != 0 &&
+            !_isGlobalPosInsideNoteContent(event.position))) {
+      _isNoteGrabScrolling = true;
+      _lastNoteGrabGlobal = event.position;
+      _noteGrabAccumulated = Offset.zero;
+      _noteVelocityTracker = VelocityTracker.withKind(PointerDeviceKind.mouse);
+      _readerCursorNotifier.value = SystemMouseCursors.grabbing;
+    }
+  }
+
+  void _handleNotePointerMove(PointerMoveEvent event) {
+    if (!_isNoteGrabScrolling) return;
+    final prev = _lastNoteGrabGlobal;
+    _lastNoteGrabGlobal = event.position;
+    if (prev == null) return;
+    final delta = event.position - prev;
+    if (delta.dy != 0) {
+      _scrollNoteByDeltaY(delta.dy);
+      _noteGrabAccumulated += delta;
+      _noteVelocityTracker?.addPosition(event.timeStamp, _noteGrabAccumulated);
+    }
+  }
+
+  void _handleNotePointerUpOrCancel(PointerEvent event) {
+    if (!_isNoteGrabScrolling) return;
+    final velY =
+        _noteVelocityTracker?.getVelocity().pixelsPerSecond.dy ?? 0.0;
+    _isNoteGrabScrolling = false;
+    _lastNoteGrabGlobal = null;
+    _noteVelocityTracker = null;
+    _updateNoteHoverCursor(event.position);
+    if (velY.abs() >= 140.0 && _readerScrollController.hasClients) {
+      _noteVelocityY = velY.clamp(-2600.0, 2600.0);
+      _noteLastInertiaElapsed = null;
+      if (!(_noteInertiaTicker?.isActive ?? false)) {
+        _noteInertiaTicker?.start();
+      }
+    }
   }
 
   Future<void> _copySelectedReaderText() async {
@@ -586,102 +717,138 @@ class VaultNotePaneState extends ConsumerState<VaultNotePane> {
     required int snippetCount,
     required bool readOnlyExam,
   }) {
+    final horizontalPad = widget.showTopBar ? 32.0 : 20.0;
     return Stack(
       children: [
-        SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 96),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (readOnlyExam)
-                SelectableText(
-                  _titleController.text,
-                  style: AppTypography.headlineLg,
-                )
-              else
-                TextField(
-                  controller: _titleController,
-                  onChanged: (_) => _scheduleAutosave(),
-                  style: AppTypography.headlineLg,
-                  decoration: const InputDecoration(
-                    filled: false,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    hintText: 'Título de la nota...',
-                  ),
+        ValueListenableBuilder<MouseCursor>(
+          valueListenable: _readerCursorNotifier,
+          builder: (_, cursor, child) => MouseRegion(
+            cursor: cursor,
+            onHover: (e) => _updateNoteHoverCursor(e.position),
+            child: child,
+          ),
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _handleNotePointerDown,
+            onPointerMove: _handleNotePointerMove,
+            onPointerUp: _handleNotePointerUpOrCancel,
+            onPointerCancel: _handleNotePointerUpOrCancel,
+            child: Scrollbar(
+              controller: _readerScrollController,
+              interactive: true,
+              child: SingleChildScrollView(
+                controller: _readerScrollController,
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPad,
+                  22,
+                  horizontalPad,
+                  96,
                 ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  if (breadcrumb.isNotEmpty)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Column(
+                      key: _noteHeaderKey,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Icon(
-                          Icons.folder_outlined,
-                          size: 14,
-                          color: AppColors.secondary,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          breadcrumb,
-                          style: AppTypography.monoSm.copyWith(
-                            color: AppColors.secondary,
+                        if (readOnlyExam)
+                          SelectableText(
+                            _titleController.text,
+                            style: AppTypography.headlineLg,
+                          )
+                        else
+                          TextField(
+                            controller: _titleController,
+                            onChanged: (_) => _scheduleAutosave(),
+                            style: AppTypography.headlineLg,
+                            decoration: const InputDecoration(
+                              filled: false,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                              hintText: 'Título de la nota...',
+                            ),
                           ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (breadcrumb.isNotEmpty)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.folder_outlined,
+                                    size: 14,
+                                    color: AppColors.secondary,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    breadcrumb,
+                                    style: AppTypography.monoSm.copyWith(
+                                      color: AppColors.secondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.schedule_rounded,
+                                  size: 14,
+                                  color: AppColors.outline,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _formatTimestamp(widget.item.updatedAt),
+                                  style: AppTypography.monoSm.copyWith(
+                                    color: AppColors.outline,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.code_rounded,
+                                  size: 14,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '$snippetCount snippets de código',
+                                  style: AppTypography.monoSm.copyWith(
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.schedule_rounded,
-                        size: 14,
-                        color: AppColors.outline,
+                    const SizedBox(height: 20),
+                    KeyedSubtree(
+                      key: _noteContentKey,
+                      child: VaultMarkdownReader(
+                        contentMd: _contentController.text,
+                        readOnly: readOnlyExam,
+                        onToggleChecklist: _onToggleChecklist,
+                        searchHighlight: widget.searchHighlight,
+                        headingKeys: _headingKeys,
+                        onSelectionChanged: (text) =>
+                            _selectedReaderText.value = text,
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        _formatTimestamp(widget.item.updatedAt),
-                        style: AppTypography.monoSm.copyWith(
-                          color: AppColors.outline,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.code_rounded,
-                        size: 14,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        '$snippetCount snippets de código',
-                        style: AppTypography.monoSm.copyWith(
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 20),
-              VaultMarkdownReader(
-                contentMd: _contentController.text,
-                readOnly: readOnlyExam,
-                onToggleChecklist: _onToggleChecklist,
-                searchHighlight: widget.searchHighlight,
-                headingKeys: _headingKeys,
-                onSelectionChanged: (text) => _selectedReaderText.value = text,
-              ),
-            ],
+            ),
           ),
         ),
         ValueListenableBuilder<String>(

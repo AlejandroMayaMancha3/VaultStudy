@@ -383,3 +383,83 @@ int? findClosestCharIndex(
   }
   return bestFallbackIdx;
 }
+
+/// Converts a viewport/screen pointer [screenDelta] into document-space pan delta,
+/// compensating for zoom factor and `RotatedBox` [quarterTurns].
+Offset rotateScreenDeltaToDocument(
+  Offset screenDelta, {
+  required double zoom,
+  int quarterTurns = 0,
+}) {
+  final safeZoom = zoom <= 0 ? 1.0 : zoom;
+  final rotated = switch (quarterTurns % 4) {
+    1 => Offset(screenDelta.dy, -screenDelta.dx),
+    2 => Offset(-screenDelta.dx, -screenDelta.dy),
+    3 => Offset(-screenDelta.dy, screenDelta.dx),
+    _ => screenDelta,
+  };
+  return rotated / safeZoom;
+}
+
+/// Returns true if [point] lies inside any rectangle in [rects].
+bool isPointInsideAnyRect(Offset point, List<Rect> rects) {
+  for (final rect in rects) {
+    if (rect.contains(point)) return true;
+  }
+  return false;
+}
+
+String _toLowerAlpha(int zeroBasedIndex) {
+  var n = zeroBasedIndex + 1;
+  final buf = StringBuffer();
+  while (n > 0) {
+    n--;
+    buf.writeCharCode(97 + (n % 26));
+    n ~/= 26;
+  }
+  return buf.toString().split('').reversed.join();
+}
+
+String _toLowerRoman(int number) {
+  if (number <= 0 || number > 50) return '◦';
+  const pairs = <(int, String)>[
+    (50, 'l'),
+    (40, 'xl'),
+    (10, 'x'),
+    (9, 'ix'),
+    (5, 'v'),
+    (4, 'iv'),
+    (1, 'i'),
+  ];
+  var rem = number;
+  final buf = StringBuffer();
+  for (final (value, symbol) in pairs) {
+    while (rem >= value) {
+      buf.write(symbol);
+      rem -= value;
+    }
+  }
+  return buf.toString();
+}
+
+/// Formats distinct hierarchy markers per outline nesting [depth]:
+/// - depth 0 (main sections): normal numbers (`1`, `2`, `3`, ...)
+/// - depth 1 (subpoints): lowercase letters (`a`, `b`, `c`, ...)
+/// - depth 2 (sub-subpoints): lowercase Roman numerals (`i`, `ii`, `iii`, ...)
+/// - depth 3+: bullet glyph (`◦`)
+String formatOutlineLevelMarker(int depth, int indexInParent) {
+  final safeIndex = indexInParent < 0 ? 0 : indexInParent;
+  return switch (depth) {
+    <= 0 => '${safeIndex + 1}',
+    1 => _toLowerAlpha(safeIndex),
+    2 => _toLowerRoman(safeIndex + 1),
+    _ => '◦',
+  };
+}
+
+/// Strips redundant leading bullet glyphs (`•`, `◦`, `▪`, `-`) from PDF outline titles.
+String cleanOutlineDisplayTitle(String rawTitle) {
+  final trimmed = rawTitle.trim();
+  final stripped = trimmed.replaceFirst(RegExp(r'^[•◦▪\-–]\s+'), '');
+  return stripped.isEmpty ? trimmed : stripped;
+}

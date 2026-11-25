@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'core/constants/app_breakpoints.dart';
 import 'core/theme/app_theme.dart';
+import 'features/app_update/application/app_update_service.dart';
 import 'features/cloud_sync/application/cloud_sync_service.dart';
 import 'features/mobile_explorer/presentation/mobile_shell.dart';
 import 'features/workspace_desktop/presentation/desktop_shell.dart';
@@ -24,6 +25,7 @@ class _VaultStudyAppState extends ConsumerState<VaultStudyApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(ref.read(cloudSyncProvider.notifier).tryAutoSyncOnStartup());
+        unawaited(ref.read(appUpdateProvider.notifier).checkForUpdates(silent: true));
       }
     });
   }

@@ -11,6 +11,8 @@ import '../../../core/storage/vault_storage_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/type_badge.dart';
+import '../../app_update/application/app_update_service.dart';
+import '../../app_update/presentation/app_update_dialog.dart';
 import '../../cloud_sync/application/cloud_sync_service.dart';
 import '../application/vault_providers.dart';
 import '../domain/vault_item.dart';
@@ -656,11 +658,72 @@ abstract final class VaultDialogs {
     }
   }
 
+  /// Moves [item] to [targetParentId] and shows an Undo snackbar so accidental
+  /// reorganizations can be reverted with 1 click.
+  static Future<void> moveItemWithUndoSnackBar(
+    BuildContext context,
+    WidgetRef ref, {
+    required VaultItem item,
+    required String? targetParentId,
+    required List<VaultItem> allItems,
+  }) async {
+    if (item.parentId == targetParentId) return;
+    final previousParentId = item.parentId;
+    await ref.read(vaultItemsProvider.notifier).moveItem(item.id, targetParentId);
+    if (!context.mounted) return;
+    final destName = targetParentId == null
+        ? 'Raíz de Bóveda'
+        : (allItems
+                .where((e) => e.id == targetParentId)
+                .map((e) => e.title)
+                .firstOrNull ??
+            'carpeta destino');
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 5),
+          content: Text('Movido "${item.title}" a "$destName".'),
+          action: SnackBarAction(
+            label: 'DESHACER',
+            onPressed: () {
+              ref
+                  .read(vaultItemsProvider.notifier)
+                  .moveItem(item.id, previousParentId);
+            },
+          ),
+        ),
+      );
+  }
+
   static Future<void> showMoveDialog(
     BuildContext context,
     WidgetRef ref,
     VaultItem item,
   ) async {
+    final isLocked = ref.read(structureLockedProvider).value ?? true;
+    if (isLocked) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 4),
+              content: const Text(
+                'Seguro anti-cambios activo: desbloquéalo para mover archivos o carpetas.',
+              ),
+              action: SnackBarAction(
+                label: 'DESBLOQUEAR',
+                onPressed: () {
+                  ref.read(structureLockedProvider.notifier).setLocked(false);
+                },
+              ),
+            ),
+          );
+      }
+      return;
+    }
+
     final allItems = ref.read(vaultItemsProvider).value ?? [];
     final folders = allItems
         .where((e) => e.type == VaultItemType.folder && e.id != item.id)
@@ -711,11 +774,15 @@ abstract final class VaultDialogs {
       ),
     );
 
-    if (confirmed == true) {
+    if (confirmed == true && context.mounted) {
       try {
-        await ref
-            .read(vaultItemsProvider.notifier)
-            .moveItem(item.id, selectedParent);
+        await moveItemWithUndoSnackBar(
+          context,
+          ref,
+          item: item,
+          targetParentId: selectedParent,
+          allItems: allItems,
+        );
       } catch (e) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1480,6 +1547,7 @@ class _VaultSettingsDialogState extends ConsumerState<_VaultSettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final readOnlyExam = ref.watch(examReadOnlyProvider).value ?? false;
+    final structureLocked = ref.watch(structureLockedProvider).value ?? true;
     final cloudSync = ref.watch(cloudSyncProvider);
 
     return AlertDialog(
@@ -1571,6 +1639,23 @@ class _VaultSettingsDialogState extends ConsumerState<_VaultSettingsDialog> {
               ),
               const SizedBox(height: 14),
               SwitchListTile(
+                value: structureLocked,
+                contentPadding: EdgeInsets.zero,
+                activeThumbColor: AppColors.bookAmber,
+                title: Text(
+                  'Seguro anti-movimientos en el árbol',
+                  style: AppTypography.bodyMd.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  'Evita arrastrar o mover archivos y carpetas de sitio por accidente.',
+                  style: AppTypography.bodySm,
+                ),
+                onChanged: (v) =>
+                    ref.read(structureLockedProvider.notifier).setLocked(v),
+              ),
+              SwitchListTile(
                 value: readOnlyExam,
                 contentPadding: EdgeInsets.zero,
                 activeThumbColor: AppColors.primary,
@@ -1586,6 +1671,73 @@ class _VaultSettingsDialogState extends ConsumerState<_VaultSettingsDialog> {
                 ),
                 onChanged: (v) =>
                     ref.read(examReadOnlyProvider.notifier).setEnabled(v),
+              ),
+              const SizedBox(height: 10),
+              Builder(
+                builder: (context) {
+                  final upd = ref.watch(appUpdateProvider);
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLowest,
+                      borderRadius:
+                          BorderRadius.circular(AppBreakpoints.radiusMd),
+                      border: Border.all(
+                        color: upd.hasUpdate
+                            ? AppColors.primary.withValues(alpha: 0.45)
+                            : AppColors.outlineVariant,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.system_update_alt_rounded,
+                          size: 18,
+                          color: upd.hasUpdate
+                              ? AppColors.primary
+                              : AppColors.secondary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'AUTO-ACTUALIZACIÓN (GITHUB)',
+                                style: AppTypography.badgeMono.copyWith(
+                                  color: upd.hasUpdate
+                                      ? AppColors.primary
+                                      : AppColors.secondary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                upd.hasUpdate && upd.latestRelease != null
+                                    ? 'Actual: v${upd.currentVersion} → Disponible: ${upd.latestRelease!.tagName}'
+                                    : 'Versión actual: v${upd.currentVersion}',
+                                style: AppTypography.bodySm,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: () {
+                            if (!upd.isBusy) {
+                              ref
+                                  .read(appUpdateProvider.notifier)
+                                  .checkForUpdates(silent: false);
+                            }
+                            showAppUpdateDialog(context, ref);
+                          },
+                          child: Text(
+                            upd.hasUpdate ? 'Actualizar' : 'Buscar',
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
               const Divider(),
               Align(

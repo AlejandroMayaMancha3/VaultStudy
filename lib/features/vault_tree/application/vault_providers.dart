@@ -374,6 +374,30 @@ class ExamReadOnlyNotifier extends AsyncNotifier<bool> {
 final examReadOnlyProvider =
     AsyncNotifierProvider<ExamReadOnlyNotifier, bool>(ExamReadOnlyNotifier.new);
 
+/// Safety Lock toggle (defaults to `true`) preventing accidental drag/drop
+/// or menu-based moves of folders and files in the vault tree.
+class StructureLockedNotifier extends AsyncNotifier<bool> {
+  @override
+  Future<bool> build() {
+    return DatabaseHelper.instance.getStructureLockedMode();
+  }
+
+  Future<void> setLocked(bool locked) async {
+    await DatabaseHelper.instance.setStructureLockedMode(locked);
+    state = AsyncData(locked);
+  }
+
+  Future<void> toggle() async {
+    final current = state.value ?? true;
+    await setLocked(!current);
+  }
+}
+
+final structureLockedProvider =
+    AsyncNotifierProvider<StructureLockedNotifier, bool>(
+  StructureLockedNotifier.new,
+);
+
 /// Helper to build `Asignatura > Tema` path string for any item.
 String buildBreadcrumbPath(List<VaultItem> allItems, VaultItem item) {
   final byId = {for (final i in allItems) i.id: i};
